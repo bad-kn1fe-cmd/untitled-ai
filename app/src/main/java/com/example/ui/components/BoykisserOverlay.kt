@@ -70,7 +70,7 @@ fun BoykisserOverlay(
         }
     }
 
-    val resId = if (variant.equals("3d", ignoreCase = true)) R.drawable.boykisser_3d else R.drawable.boykisser_classic
+    val resId = if (variant.equals("pochita", ignoreCase = true)) R.drawable.pochita_classic else R.drawable.boykisser_classic
 
     BoxWithConstraints(
         modifier = modifier.fillMaxSize()
@@ -88,7 +88,9 @@ fun BoykisserOverlay(
             (screenHeightPx - with(density) { 108.dp.toPx() }).coerceAtLeast(80f)
         }
 
-        val jumpOffsetPx = with(density) { jumpAnim.value.dp.toPx() }
+        // Running bounce/hop offset while walking
+        val runningHopDp = if (isWalkMode) (abs(sin(posXPercent * 90f)) * 8f).dp else 0.dp
+        val jumpOffsetPx = with(density) { (jumpAnim.value - runningHopDp.value).dp.toPx() }
         val finalYPx = baseYPx + jumpOffsetPx
 
         Box(
@@ -104,8 +106,9 @@ fun BoykisserOverlay(
                 ) {
                     HapticHelper.performLightHaptic(context, true)
                     coroutineScope.launch {
+                        // High petting jump
                         jumpAnim.animateTo(
-                            targetValue = -32f,
+                            targetValue = -54f,
                             animationSpec = spring(
                                 dampingRatio = Spring.DampingRatioMediumBouncy,
                                 stiffness = Spring.StiffnessMediumLow
@@ -123,7 +126,7 @@ fun BoykisserOverlay(
         ) {
             Image(
                 painter = painterResource(id = resId),
-                contentDescription = "Boykisser Pet",
+                contentDescription = "Companion Pet",
                 modifier = Modifier.fillMaxSize()
             )
         }

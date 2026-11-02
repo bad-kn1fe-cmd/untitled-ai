@@ -4,12 +4,15 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import com.example.R
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -309,7 +312,7 @@ fun VaultHubScreen(
                         Column {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    text = if (isEn) "Untitled Hub" else "Новый Untitled",
+                                    text = "Untitled",
                                     style = MaterialTheme.typography.titleLarge,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -638,6 +641,124 @@ fun VaultHubScreen(
                                                 }
                                             }
                                         )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Pet Vault Showcase Card (Хранилище питомцев)
+                        item {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Surface(
+                                shape = RoundedCornerShape(20.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Surface(
+                                                shape = CircleShape,
+                                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                                                modifier = Modifier.size(38.dp)
+                                            ) {
+                                                Box(contentAlignment = Alignment.Center) {
+                                                    Text("🐾", fontSize = 20.sp)
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Column {
+                                                Text(
+                                                    text = if (isFemboy) "🐾 Хранилище питомцев (uwu)" else if (isEn) "🐾 Pet Vault" else "🐾 Хранилище питомцев",
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    fontWeight = FontWeight.ExtraBold,
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                                Text(
+                                                    text = if (isEn) "Select your active screen companion pet" else "Выбирайте активного питомца для экрана и общения",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    fontSize = 11.sp
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(14.dp))
+
+                                    // Pet Cards (Static Sprite Previews)
+                                    val petsList = listOf(
+                                        Triple("classic", if (isFemboy) "🐱 Бойкиссер (>w<)" else if (isEn) "🐱 Boykisser" else "🐱 Бойкиссер", R.drawable.boykisser_classic),
+                                        Triple("pochita", if (isFemboy) "🐶 Почита ✨" else if (isEn) "🐶 Pochita" else "🐶 Почита ✨", R.drawable.pochita_classic)
+                                    )
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        petsList.forEach { (petId, petTitle, spriteRes) ->
+                                            val isSelected = if (petId == "pochita") userSettings.boykisserPetVariant.equals("pochita", ignoreCase = true)
+                                            else !userSettings.boykisserPetVariant.equals("pochita", ignoreCase = true)
+
+                                            Surface(
+                                                shape = RoundedCornerShape(16.dp),
+                                                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+                                                border = BorderStroke(
+                                                    if (isSelected) 2.dp else 1.dp,
+                                                    if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
+                                                ),
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .clip(RoundedCornerShape(16.dp))
+                                                    .clickable {
+                                                        onUpdateSettings(userSettings.copy(boykisserPetVariant = petId, boykisserPetEnabled = true))
+                                                    }
+                                            ) {
+                                                Column(
+                                                    modifier = Modifier.padding(12.dp),
+                                                    horizontalAlignment = Alignment.CenterHorizontally
+                                                ) {
+                                                    // Static Sprite Preview
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(64.dp)
+                                                            .clip(RoundedCornerShape(12.dp))
+                                                            .background(Color.Black.copy(alpha = 0.25f)),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Image(
+                                                            painter = painterResource(id = spriteRes),
+                                                            contentDescription = petTitle,
+                                                            modifier = Modifier.size(52.dp)
+                                                        )
+                                                    }
+
+                                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        RadioButton(
+                                                            selected = isSelected,
+                                                            onClick = {
+                                                                onUpdateSettings(userSettings.copy(boykisserPetVariant = petId, boykisserPetEnabled = true))
+                                                            },
+                                                            modifier = Modifier.size(20.dp)
+                                                        )
+                                                        Spacer(modifier = Modifier.width(6.dp))
+                                                        Text(
+                                                            text = petTitle,
+                                                            style = MaterialTheme.typography.labelMedium,
+                                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                            fontSize = 12.sp
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }

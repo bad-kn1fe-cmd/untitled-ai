@@ -6,11 +6,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -18,6 +19,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 data class WhatsNewFeatureItem(
     val emoji: String,
@@ -96,6 +99,27 @@ object WhatsNewReleaseNotes {
             descFemboy = "Удобный переходик по разделам оформления, языков, обойчиков, поведения и системы без лишней каши (uwu)."
         )
     )
+
+    suspend fun fetchRemoteMarkdownChanges(): String? = withContext(Dispatchers.IO) {
+        val urls = listOf(
+            "https://raw.githubusercontent.com/bad-kn1fe-cmd/untitled-ai/main/new-changes.md",
+            "https://github.com/bad-kn1fe-cmd/untitled-ai/raw/main/new-changes.md",
+            "https://raw.githubusercontent.com/yoayammmDEV/box-of-untitledAI/main/new-changes.md"
+        )
+        for (url in urls) {
+            try {
+                val connection = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+                connection.connectTimeout = 4500
+                connection.readTimeout = 4500
+                connection.requestMethod = "GET"
+                if (connection.responseCode == 200) {
+                    val text = connection.inputStream.bufferedReader().use { it.readText() }
+                    if (text.isNotBlank()) return@withContext text
+                }
+            } catch (_: Exception) {}
+        }
+        null
+    }
 }
 
 @Composable
@@ -105,6 +129,16 @@ fun WhatsNewDialog(
 ) {
     val isEn = appLanguage.equals("en", ignoreCase = true)
     val isFemboy = appLanguage.equals("femboy", ignoreCase = true)
+
+    var remoteMarkdown by remember { mutableStateOf<String?>(null) }
+    var isLoadingRemote by remember { mutableStateOf(true) }
+
+    LaunchedEffect(Unit) {
+        isLoadingRemote = true
+        val text = WhatsNewReleaseNotes.fetchRemoteMarkdownChanges()
+        remoteMarkdown = text
+        isLoadingRemote = false
+    }
 
     val titleText = if (isFemboy) "🎉 Что нового в 1.0.0 (uwu)" else if (isEn) "🎉 What's New in 1.0.0" else "🎉 Что добавлено в 1.0.0"
     val subtitleText = if (isFemboy) "Официальный релиз версии 1.0.0 — Свободный ролевой движок «Untitled» 🐾"
@@ -169,70 +203,174 @@ fun WhatsNewDialog(
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Scrollable Feature List
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 380.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(WhatsNewReleaseNotes.FEATURES_100, key = { it.titleRu }) { item ->
-                        val itemTitle = if (isFemboy) item.titleFemboy else if (isEn) item.titleEn else item.titleRu
-                        val itemDesc = if (isFemboy) item.descFemboy else if (isEn) item.descEn else item.descRu
-
-                        Surface(
-                            shape = RoundedCornerShape(16.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
-                            modifier = Modifier.fillMaxWidth()
+                // Content View: Loading vs Remote Markdown vs Built-in Fallback
+                if (isLoadingRemote) {
+                    // Empty Window / Skeleton Loading State
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(240.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            Row(
-                                modifier = Modifier.padding(12.dp),
-                                verticalAlignment = Alignment.Top
-                            ) {
-                                Text(
-                                    text = item.emoji,
-                                    fontSize = 24.sp,
-                                    modifier = Modifier.padding(top = 2.dp)
-                                )
-
-                                Spacer(modifier = Modifier.width(12.dp))
-
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(36.dp),
+                                strokeWidth = 3.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = if (isFemboy) "Загружаем new-changes.md из GitHub (uwu)..."
+                                else if (isEn) "Fetching new-changes.md from GitHub..."
+                                else "Загрузка new-changes.md с GitHub...",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                } else if (!remoteMarkdown.isNullOrBlank()) {
+                    // Render Remote Markdown Content from new-changes.md
+                    SelectionContainer {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 380.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            val lines = remoteMarkdown!!.lines()
+                            items(lines) { line ->
+                                val trimmed = line.trim()
+                                when {
+                                    trimmed.startsWith("# ") -> {
                                         Text(
-                                            text = itemTitle,
+                                            text = trimmed.removePrefix("# ").trim(),
+                                            style = MaterialTheme.typography.titleLarge,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                                        )
+                                    }
+                                    trimmed.startsWith("## ") -> {
+                                        Text(
+                                            text = trimmed.removePrefix("## ").trim(),
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.secondary,
+                                            modifier = Modifier.padding(top = 6.dp, bottom = 2.dp)
+                                        )
+                                    }
+                                    trimmed.startsWith("### ") -> {
+                                        Text(
+                                            text = trimmed.removePrefix("### ").trim(),
                                             style = MaterialTheme.typography.titleSmall,
                                             fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onSurface
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.padding(top = 4.dp)
                                         )
-                                        Surface(
-                                            shape = RoundedCornerShape(6.dp),
-                                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                    }
+                                    trimmed.startsWith("- ") || trimmed.startsWith("* ") -> {
+                                        Row(
+                                            verticalAlignment = Alignment.Top,
+                                            modifier = Modifier.padding(start = 4.dp, top = 2.dp)
                                         ) {
                                             Text(
-                                                text = item.badge,
-                                                fontSize = 9.sp,
-                                                fontWeight = FontWeight.ExtraBold,
+                                                text = "• ",
+                                                fontWeight = FontWeight.Bold,
                                                 color = MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                                fontSize = 14.sp
+                                            )
+                                            Text(
+                                                text = trimmed.removePrefix("- ").removePrefix("* ").trim()
+                                                    .replace("**", ""),
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                fontSize = 12.5.sp,
+                                                lineHeight = 16.sp
                                             )
                                         }
                                     }
+                                    trimmed.isNotBlank() -> {
+                                        Text(
+                                            text = trimmed.replace("**", ""),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontSize = 12.5.sp,
+                                            lineHeight = 16.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // Built-in Release Notes Fallback
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 380.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        items(WhatsNewReleaseNotes.FEATURES_100, key = { it.titleRu }) { item ->
+                            val itemTitle = if (isFemboy) item.titleFemboy else if (isEn) item.titleEn else item.titleRu
+                            val itemDesc = if (isFemboy) item.descFemboy else if (isEn) item.descEn else item.descRu
 
-                                    Spacer(modifier = Modifier.height(4.dp))
-
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.Top
+                                ) {
                                     Text(
-                                        text = itemDesc,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        fontSize = 11.5.sp,
-                                        lineHeight = 15.sp
+                                        text = item.emoji,
+                                        fontSize = 24.sp,
+                                        modifier = Modifier.padding(top = 2.dp)
                                     )
+
+                                    Spacer(modifier = Modifier.width(12.dp))
+
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Text(
+                                                text = itemTitle,
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            Surface(
+                                                shape = RoundedCornerShape(6.dp),
+                                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                            ) {
+                                                Text(
+                                                    text = item.badge,
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.ExtraBold,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                                )
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.height(4.dp))
+
+                                        Text(
+                                            text = itemDesc,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontSize = 11.5.sp,
+                                            lineHeight = 15.sp
+                                        )
+                                    }
                                 }
                             }
                         }

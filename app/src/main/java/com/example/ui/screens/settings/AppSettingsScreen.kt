@@ -8,6 +8,12 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -2472,16 +2478,16 @@ fun AppSettingsScreen(
                                             verticalAlignment = Alignment.CenterVertically,
                                             modifier = Modifier.weight(1f).padding(end = 10.dp)
                                         ) {
-                                            Text("🐱", fontSize = 22.sp)
+                                            Text("🐾", fontSize = 22.sp)
                                             Spacer(modifier = Modifier.width(10.dp))
                                             Column {
                                                 Text(
-                                                    text = if (isFemboy) "Питомец Бойкиссер на экране 🐾" else if (isEn) "Boykisser Screen Companion" else "Питомец Бойкиссер на экране",
+                                                    text = if (isFemboy) "Экранные Питомцы (🐾)" else if (isEn) "Screen Companion Pets" else "Питомцы",
                                                     style = MaterialTheme.typography.titleMedium,
                                                     fontWeight = FontWeight.Bold
                                                 )
                                                 Text(
-                                                    text = if (isFemboy) "Милый бойкиссер бегает по экрану, не мешая чтению. Тапни, чтобы помурчать! (uwu)" else if (isEn) "A cute Boykisser pet walks along the screen edge without blocking text" else "Милый бойкиссер передвигается по краю экрана, не мешая чтению чатов и кнопкам",
+                                                    text = if (isFemboy) "Миленькие питомцы (Бойкиссер, Почита) бегают по экрану. Тапни, чтобы они подпрыгнули! (uwu)" else if (isEn) "Interactive screen companion pets (Boykisser, Pochita) with walk/sit settings and tap animations" else "Интерактивные экранные питомцы (Бойкиссер, Почита) с настройками бега и реагированием на тапы",
                                                     style = MaterialTheme.typography.bodySmall,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
@@ -2499,27 +2505,66 @@ fun AppSettingsScreen(
                                         HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
                                         Spacer(modifier = Modifier.height(10.dp))
 
-                                        // Boykisser Variant Switcher: Classic (2D) vs 3D
+                                        // Animated Live Running Preview Box
                                         Text(
-                                            text = if (isEn) "Boykisser Style" else "Стиль Бойкиссера",
-                                            style = MaterialTheme.typography.labelMedium,
+                                            text = if (isFemboy) "Анимированный предпросмотр бега (uwu)" else if (isEn) "Live Pet Running Animation" else "Предпросмотр бега и анимации питомца",
+                                            style = MaterialTheme.typography.labelSmall,
                                             fontWeight = FontWeight.Bold,
                                             color = MaterialTheme.colorScheme.primary
                                         )
-                                        Spacer(modifier = Modifier.height(6.dp))
-                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            FilterChip(
-                                                selected = settings.boykisserPetVariant.equals("classic", ignoreCase = true),
-                                                onClick = { onUpdateSettings(settings.copy(boykisserPetVariant = "classic")) },
-                                                label = { Text(if (isFemboy) "2D Классика (>w<)" else if (isEn) "2D Classic" else "2D Классика (>w<)") },
-                                                shape = RoundedCornerShape(8.dp)
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(86.dp)
+                                                .clip(RoundedCornerShape(14.dp))
+                                                .background(MaterialTheme.colorScheme.surface)
+                                                .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f), RoundedCornerShape(14.dp)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            val speedFactor = settings.boykisserPetSpeed
+                                            val infiniteTransition = rememberInfiniteTransition(label = "settings_pet_preview_anim")
+                                            val previewXFraction by infiniteTransition.animateFloat(
+                                                initialValue = 0.08f,
+                                                targetValue = 0.82f,
+                                                animationSpec = infiniteRepeatable(
+                                                    animation = tween(
+                                                        durationMillis = (2800 / speedFactor).toInt().coerceIn(600, 5000),
+                                                        easing = LinearEasing
+                                                    ),
+                                                    repeatMode = RepeatMode.Reverse
+                                                ),
+                                                label = "pet_preview_x"
                                             )
-                                            FilterChip(
-                                                selected = settings.boykisserPetVariant.equals("3d", ignoreCase = true),
-                                                onClick = { onUpdateSettings(settings.copy(boykisserPetVariant = "3d")) },
-                                                label = { Text(if (isFemboy) "3D Фигурка ✨" else if (isEn) "3D Figurine" else "3D Фигурка ✨") },
-                                                shape = RoundedCornerShape(8.dp)
-                                            )
+
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                                            ) {
+                                                Image(
+                                                    painter = painterResource(
+                                                        if (settings.boykisserPetVariant.equals("pochita", ignoreCase = true)) R.drawable.pochita_classic
+                                                        else R.drawable.boykisser_classic
+                                                    ),
+                                                    contentDescription = "Pet Running Preview",
+                                                    modifier = Modifier
+                                                        .align(Alignment.TopStart)
+                                                        .offset(
+                                                            x = (previewXFraction * 220).dp,
+                                                            y = (kotlin.math.abs(kotlin.math.sin(previewXFraction * 90f)) * -8f).dp
+                                                        )
+                                                        .size(42.dp)
+                                                )
+
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .height(2.dp)
+                                                        .align(Alignment.BottomCenter)
+                                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), RoundedCornerShape(1.dp))
+                                                )
+                                            }
                                         }
 
                                         Spacer(modifier = Modifier.height(10.dp))
