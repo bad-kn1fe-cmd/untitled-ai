@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="120dp"
+    android:height="120dp"
+    android:viewportWidth="100"
+    android:viewportHeight="100">
+
+    <!-- 3D White Body Base -->
+    <path
+        android:fillColor="#F8FAFC"
+        android:strokeColor="#334155"
+        android:strokeWidth="2.5"
+        android:pathData="M35,68 C30,75 35,90 42,92 C50,92 50,82 50,82 C50,82 50,92 58,92 C65,90 70,75 65,68 Z" />
+
+    <!-- 3D White Cat Head -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:strokeColor="#334155"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M24,32 L15,10 L38,22 C45,19 55,19 62,22 L85,10 L76,32 C86,42 86,58 76,68 C66,78 34,78 24,68 C14,58 14,42 24,32 Z" />
+
+    <!-- Cute 3D Eyes -->
+    <path
+        android:fillColor="#1E293B"
+        android:pathData="M30,38 H40 V52 H30 Z M60,38 H70 V52 H60 Z" />
+
+    <!-- Red 3D Cheeks -->
+    <path
+        android:fillColor="#EF4444"
+        android:pathData="M22,54 C22,50 28,50 28,54 C28,58 22,58 22,54 Z M72,54 C72,50 78,50 78,54 C78,58 72,58 72,54 Z" />
+
+    <!-- Smug 3D Mouth -->
+    <path
+        android:strokeColor="#1E293B"
+        android:strokeWidth="2.8"
+        android:strokeLineCap="round"
+        android:pathData="M42,58 Q50,64 58,58" />
+
+</vector>

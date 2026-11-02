@@ -1,0 +1,6 @@
+{
+  "name": "AI Roleplay Studio",
+  "description": "AI Roleplay Studio — Engine with Cerebras, Grok, Groq, OpenRouter, Claude, and Gemini integrations, custom themes, personas, and local persistence.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
