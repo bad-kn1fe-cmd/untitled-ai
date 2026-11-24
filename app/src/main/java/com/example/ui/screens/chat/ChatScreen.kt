@@ -30,6 +30,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -57,6 +58,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.example.ui.components.VoiceMessagePlayer
 import com.example.ui.components.VoiceRecordingBar
+import com.example.ui.components.AdaptiveIconText
+import com.example.ui.components.AdaptiveUiIcon
+import com.example.ui.components.HalloweenPumpkinRainOverlay
+import com.example.ui.components.SnowfallOverlay
 import com.example.ui.studio.studioElement
 import com.example.util.VoicePlayerManager
 import com.example.util.VoiceRecorderHelper
@@ -86,7 +91,7 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ChatScreen(
     character: CharacterEntity,
@@ -108,6 +113,7 @@ fun ChatScreen(
     onEditMessage: (Long, String) -> Unit,
     onDeleteMessage: (Long) -> Unit,
     onClearChat: () -> Unit,
+    onArchiveAndCreateNewChat: ((Long, Long) -> Unit)? = null,
     onToggleTextingMode: (Boolean) -> Unit,
     onSwitchChat: (Long) -> Unit,
     onCreateNewChat: (String) -> Unit,
@@ -139,6 +145,7 @@ fun ChatScreen(
     allPersonas: List<UserPersonaEntity> = emptyList(),
     activePersona: UserPersonaEntity? = null,
     onSelectChatPersona: (Long?) -> Unit = {},
+    onSelectProviderProfile: ((Long) -> Unit)? = null,
     initialDraftText: String = "",
     onChatInputTopYChanged: ((Float?) -> Unit)? = null,
     returnedFailedMessageText: String? = null,
@@ -148,6 +155,7 @@ fun ChatScreen(
     onSetReaction: (Long, String?) -> Unit = { _, _ -> },
     onBranchChat: (Long) -> Unit = {},
     isHalloweenActive: Boolean = false,
+    isNewYearActive: Boolean = false,
     onBlackPumpkinTapped: () -> Unit = {},
     onAssistantCreateBot: ((String, () -> Unit, (String) -> Unit) -> Unit)? = null,
     onAssistantCreatePersona: ((String, () -> Unit, (String) -> Unit) -> Unit)? = null,
@@ -382,6 +390,26 @@ fun ChatScreen(
     var newChatTitleInput by remember { mutableStateOf("") }
     var showClearChatDialog by remember { mutableStateOf(false) }
     var showSystemPromptDialog by remember { mutableStateOf(false) }
+    var showContextFullArchiveDialog by remember { mutableStateOf(false) }
+    var showGeminiNewChatSheet by remember { mutableStateOf(false) }
+    var showRagDebugDialog by remember { mutableStateOf(false) }
+    var showProviderPickerDialog by remember { mutableStateOf(false) }
+    var showReasoningDialog by remember { mutableStateOf(false) }
+    var selectedReasoningLevel by remember { mutableStateOf("Обычный") }
+
+    val activeProfile = remember(providerProfiles, chat.providerProfileId) {
+        providerProfiles.find { it.id == chat.providerProfileId } ?: providerProfiles.find { it.isDefaultText }
+    }
+    val activeModelName = activeProfile?.model ?: "gemini-1.5-flash"
+    val effectiveContextLimit = userSettings.getEffectiveContextLimit(activeModelName)
+    val currentTokens = remember(messages) { messages.sumOf { it.content.length / 3 } }
+    val limitPercent = ((currentTokens.toFloat() / effectiveContextLimit.toFloat()) * 100).toInt().coerceIn(1, 100)
+
+    LaunchedEffect(limitPercent, chat.isArchived) {
+        if (limitPercent >= 100 && !chat.isArchived && messages.size >= 10) {
+            showContextFullArchiveDialog = true
+        }
+    }
 
     // Message action state (Inline Edit / Delete)
     var selectedMessageForAction by remember { mutableStateOf<MessageEntity?>(null) }
@@ -568,7 +596,7 @@ fun ChatScreen(
     val glassAlpha = userSettings.glassAlpha.coerceIn(0.15f, 0.95f)
 
     val glassBg = when {
-        !isGlassEnabled -> MaterialTheme.colorScheme.surface
+        !isGlassEnabled -> MaterialTheme.colorScheme.surface.copy(alpha = if (userSettings.chatWallpaperPreset != "none") 0.65f else 1.0f)
         isLightGlass -> Color(0xFFFFFFFF).copy(alpha = glassAlpha.coerceAtLeast(0.35f))
         else -> Color(0xFF141418).copy(alpha = glassAlpha)
     }
@@ -613,25 +641,94 @@ fun ChatScreen(
             )
         }
 
+        // New Year snowfall falling BEHIND text and messages
+        if (isNewYearActive && !isPreloadedShell) {
+            SnowfallOverlay(
+                isActive = true,
+                dropLimit = userSettings.pumpkinRainDropLimit,
+                snowAlpha = userSettings.pumpkinRainAlpha * 0.70f
+            )
+        }
+
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             containerColor = Color.Transparent,
             topBar = {
-                TopAppBar(
-                    modifier = Modifier.studioElement("chat_top_bar"),
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = glassBg,
-                        titleContentColor = glassContentColor,
-                        navigationIconContentColor = glassContentColor,
-                        actionIconContentColor = glassContentColor
-                    ),
+                val providerName = activeProfile?.name ?: "Gemini"
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .combinedClickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = {},
+                            onLongClick = { showMenu = true },
+                            onDoubleClick = { showMenu = true }
+                        )
+                ) {
+                    if (userSettings.chatInterfaceTheme == "deepseek") {
+                        DeepSeekTopBar(
+                            glassBg = glassBg,
+                            glassContentColor = glassContentColor,
+                            onBack = onBack,
+                            onMenuClick = { showMenu = true },
+                            onNewChatClick = {
+                                newChatTitleInput = (if (isEn) "Dialogue " else "Диалог ") + (allChatsForCharacter.size + 1)
+                                showNewChatDialog = true
+                            }
+                        )
+                    } else if (userSettings.chatInterfaceTheme == "gemini") {
+                        GeminiTopBar(
+                            glassBg = glassBg,
+                            glassContentColor = glassContentColor,
+                            onBack = onBack,
+                            onMenuClick = { showMenu = true },
+                            onPenClick = { showGeminiNewChatSheet = true },
+                            onPersonaClick = { showPersonaSheet = true },
+                            onOpenProviderPicker = { showProviderPickerDialog = true },
+                            activeProviderName = providerName,
+                            effectivePersona = effectivePersona
+                        )
+                    } else if (userSettings.chatInterfaceTheme == "characterai") {
+                        CharacterAiTopBar(
+                            character = character,
+                            glassBg = glassBg,
+                            glassContentColor = glassContentColor,
+                            onBack = onBack,
+                            onMenuClick = { showMenu = true },
+                            onHistoryClick = onOpenRelationshipHistory,
+                            onPersonaClick = { showPersonaSheet = true },
+                            effectivePersona = effectivePersona
+                        )
+                    } else if (userSettings.chatInterfaceTheme == "janitorai") {
+                        JanitorAiTopBar(
+                            character = character,
+                            glassBg = glassBg,
+                            glassContentColor = glassContentColor,
+                            onBack = onBack,
+                            onMenuClick = { showMenu = true },
+                            onOpenProviderPicker = { showProviderPickerDialog = true }
+                        )
+                    } else {
+                        TopAppBar(
+                            modifier = Modifier.studioElement("chat_top_bar"),
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = glassBg,
+                                titleContentColor = glassContentColor,
+                                navigationIconContentColor = glassContentColor,
+                                actionIconContentColor = glassContentColor
+                            ),
                     title = {
                         if (!isPreloadedShell && character.id > 0L) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier
                                     .studioElement("chat_branch_selector")
-                                    .clickable { showBranchesDialog = true }
+                                    .combinedClickable(
+                                        onClick = { showBranchesDialog = true },
+                                        onLongClick = { showMenu = true },
+                                        onDoubleClick = { showMenu = true }
+                                    )
                             ) {
                                 AvatarImage(
                                     uri = character.avatarUri,
@@ -697,226 +794,132 @@ fun ChatScreen(
                         }
 
                         // Single Three-dots Overflow Menu
-                        Box {
-                            IconButton(onClick = { showMenu = true }) {
-                                Icon(Icons.Default.MoreVert, contentDescription = if (isEn) "Chat Menu" else "Меню чата")
-                            }
-
-                            DropdownMenu(
-                                expanded = showMenu,
-                                onDismissRequest = { showMenu = false }
-                            ) {
-                            // 0. Select Persona
-                            DropdownMenuItem(
-                                text = {
-                                    Column {
-                                        Text(if (isFemboy) "Масочка для чатика" else if (isEn) "Persona for chat" else "Персона для чата")
-                                        Text(
-                                            text = effectivePersona?.name ?: (if (isFemboy) "Глобальная по умолчанию" else if (isEn) "Global Default" else "Глобальная по умолчанию"),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-                                },
-                                onClick = {
-                                    showMenu = false
-                                    showPersonaSheet = true
-                                },
-                                leadingIcon = {
-                                    Icon(Icons.Default.Face, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                                }
-                            )
-
-                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-                            // 1. Chat Branches
-                            DropdownMenuItem(
-                                text = { Text(if (isFemboy) "Ветки диалога... 🐾" else if (isEn) "Dialogue branches..." else "Ветки диалога...") },
-                                onClick = {
-                                    showMenu = false
-                                    showBranchesDialog = true
-                                },
-                                leadingIcon = {
-                                    Icon(Icons.Default.Forum, contentDescription = null)
-                                }
-                            )
-
-                            // 3. New Chat Branch
-                            DropdownMenuItem(
-                                text = { Text(if (isFemboy) "Новый чатик с ботиком" else if (isEn) "New dialogue with bot" else "Новый диалог с ботом") },
-                                onClick = {
-                                    showMenu = false
-                                    newChatTitleInput = (if (isEn) "Dialogue " else "Диалог ") + (allChatsForCharacter.size + 1)
-                                    showNewChatDialog = true
-                                },
-                                leadingIcon = {
-                                    Icon(Icons.Default.AddComment, contentDescription = null)
-                                }
-                            )
-
-                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-                            // 4. Relationship Table
-                            DropdownMenuItem(
-                                text = {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(if (isFemboy) "История милоты и отношений" else if (isEn) "Relationship history" else "История отношений")
-                                        if (latestRelationship != null) {
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Text(
-                                                "(${latestRelationship.trustScore}%)",
-                                                color = MaterialTheme.colorScheme.primary,
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                        }
-                                    }
-                                },
-                                onClick = {
-                                    showMenu = false
-                                    onOpenRelationshipHistory()
-                                },
-                                leadingIcon = {
-                                    Icon(Icons.Default.Favorite, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                                }
-                            )
-
-                            // 6. Chat Notes
-                            DropdownMenuItem(
-                                text = {
-                                    Column {
-                                        Text(if (isFemboy) "Заметочки к чатику" else if (isEn) "Chat notes" else "Заметки к чату")
-                                        Text(
-                                            text = if (chat.notes.isNotBlank()) (if (isEn) "Filled" else "Заполнено") else (if (isFemboy) "Пустенько" else if (isEn) "Empty" else "Пусто"),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-                                },
-                                onClick = {
-                                    showMenu = false
-                                    notesInput = chat.notes
-                                    showNotesDialog = true
-                                },
-                                leadingIcon = {
-                                    Icon(Icons.Default.EditNote, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                                }
-                            )
-
-                            // 6b. System Prompt Viewer
-                            DropdownMenuItem(
-                                text = {
-                                    Column {
-                                        Text(if (isEn) "AI System Prompt" else "Системный промпт ИИ")
-                                        Text(
-                                            text = if (isFemboy) "Просмотр и цап-царап промпта" else if (isEn) "View and copy prompt" else "Просмотр и копирование промпта",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-                                },
-                                onClick = {
-                                    showMenu = false
-                                    showSystemPromptDialog = true
-                                },
-                                leadingIcon = {
-                                    Icon(Icons.Default.Terminal, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                                }
-                            )
-
-                            // 7. Chat Settings
-                            DropdownMenuItem(
-                                text = { Text(if (isFemboy) "Настроечки чатика (18+, ИИ)" else if (isEn) "Chat settings (18+, AI)" else "Настройки чата (18+, ИИ)") },
-                                onClick = {
-                                    showMenu = false
-                                    onOpenChatSettings()
-                                },
-                                leadingIcon = {
-                                    Icon(Icons.Default.Tune, contentDescription = null)
-                                }
-                            )
-
-                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-                            // 7. Clear Chat
-                            DropdownMenuItem(
-                                text = { Text(if (isFemboy) "Стереть сообщения (ня)" else if (isEn) "Clear messages" else "Очистить сообщения", color = MaterialTheme.colorScheme.error) },
-                                onClick = {
-                                    showMenu = false
-                                    showClearChatDialog = true
-                                },
-                                leadingIcon = {
-                                    Icon(Icons.Default.DeleteSweep, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-                                }
-                            )
+                        IconButton(onClick = { showMenu = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = if (isEn) "Chat Menu" else "Меню чата")
                         }
                     }
                 }
-            }
-        )
+            )
+        }
     }
+}
 ) { padding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
         ) {
+            ChatDropdownMenu(
+                expanded = showMenu,
+                onDismissRequest = { showMenu = false },
+                isEn = isEn,
+                isFemboy = isFemboy,
+                effectivePersona = effectivePersona,
+                chat = chat,
+                character = character,
+                latestRelationship = latestRelationship,
+                onPersonaSheetOpen = { showPersonaSheet = true },
+                onBranchesDialogOpen = { showBranchesDialog = true },
+                onNewChatDialogOpen = {
+                    newChatTitleInput = (if (isEn) "Dialogue " else "Диалог ") + (allChatsForCharacter.size + 1)
+                    showNewChatDialog = true
+                },
+                onOpenRelationshipHistory = onOpenRelationshipHistory,
+                onNotesDialogOpen = {
+                    notesInput = chat.notes
+                    showNotesDialog = true
+                },
+                onSystemPromptDialogOpen = { showSystemPromptDialog = true },
+                onChatSettingsOpen = onOpenChatSettings,
+                onRagDebugDialogOpen = { showRagDebugDialog = true },
+                onClearChatDialogOpen = { showClearChatDialog = true },
+                onToggleArchiveChat = { onToggleArchiveChat(chat.id, !chat.isArchived) },
+                onFreeMemoryNewChat = { showContextFullArchiveDialog = true }
+            )
+
+            GeminiNewChatSheet(
+                visible = showGeminiNewChatSheet,
+                onDismissRequest = { showGeminiNewChatSheet = false },
+                isEn = isEn,
+                isFemboy = isFemboy,
+                characterName = character.name,
+                onNewChatClick = {
+                    newChatTitleInput = (if (isEn) "Dialogue " else "Диалог ") + (allChatsForCharacter.size + 1)
+                    showNewChatDialog = true
+                },
+                onFreeMemoryNewChatClick = {
+                    showContextFullArchiveDialog = true
+                },
+                onHistoryClick = {
+                    showBranchesDialog = true
+                },
+                onOpenAllSettingsClick = {
+                    showMenu = true
+                }
+            )
+
             Column(modifier = Modifier.fillMaxSize()) {
-                // Persona indicator banner
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { showPersonaSheet = true }
-                            .padding(horizontal = 14.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                // Persona indicator banner (Classic theme only)
+                if (userSettings.chatInterfaceTheme == "classic") {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .combinedClickable(
+                                    onClick = { showPersonaSheet = true },
+                                    onLongClick = { showMenu = true },
+                                    onDoubleClick = { showMenu = true }
+                                )
+                                .padding(horizontal = 14.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Icon(
-                                Icons.Default.Face,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            val personaTitle = if (isFemboy) "Масочка" else if (isEn) "Persona" else "Персона"
-                            val globalDefault = if (isFemboy) "Глобальная по умолчанию" else if (isEn) "Global Default" else "Глобальная по умолчанию"
-                            Text(
-                                text = "$personaTitle: ${effectivePersona?.name ?: globalDefault}",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            if (effectivePersona?.gender?.isNotBlank() == true) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    Icons.Default.Face,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                val personaTitle = if (isFemboy) "Масочка" else if (isEn) "Persona" else "Персона"
+                                val globalDefault = if (isFemboy) "Глобальная по умолчанию" else if (isEn) "Global Default" else "Глобальная по умолчанию"
                                 Text(
-                                    text = " • ${effectivePersona.gender}",
+                                    text = "$personaTitle: ${effectivePersona?.name ?: globalDefault}",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (effectivePersona?.gender?.isNotBlank() == true) {
+                                    Text(
+                                        text = " • ${effectivePersona.gender}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = if (isFemboy) "Выбрать ▾" else if (isEn) "Select" else "Выбрать",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Icon(
+                                    Icons.Default.ArrowDropDown,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
                                 )
                             }
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = if (isFemboy) "Выбрать ▾" else if (isEn) "Select" else "Выбрать",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Icon(
-                                Icons.Default.ArrowDropDown,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(16.dp)
-                            )
                         }
                     }
                 }
@@ -992,6 +995,8 @@ fun ChatScreen(
                         .fillMaxWidth()
                 ) {
                     val lastVisibleId = allChatMessages.lastOrNull()?.id
+                    val hasUserMessages = allChatMessages.any { it.sender == "user" }
+                    val isCustomTheme = userSettings.chatInterfaceTheme != "classic"
 
                     LazyColumn(
                         state = listState,
@@ -1046,12 +1051,41 @@ fun ChatScreen(
                             }
                         }
 
-                        itemsIndexed(
-                            items = allChatMessages,
-                            key = { _, msg -> msg.id },
-                            contentType = { _, msg -> msg.sender }
-                        ) { index, msg ->
-                            val isInlineEditing = inlineEditingMessageId == msg.id
+                        val hasChroniclesOrMultiple = allChatMessages.any { it.content.startsWith("📖") } || allChatMessages.size > 1 || chat.title.contains("Глава")
+                        if (!hasUserMessages && !hasChroniclesOrMultiple && isCustomTheme) {
+                            val effectiveGreeting = allChatMessages.firstOrNull { it.sender != "user" && !it.content.startsWith("📖") }?.content
+                                ?: character.greetingMessage
+                            if (userSettings.chatInterfaceTheme == "deepseek") {
+                                item(key = "empty_deepseek") { DeepSeekEmptyState(character, greetingText = effectiveGreeting) }
+                            } else if (userSettings.chatInterfaceTheme == "gemini") {
+                                item(key = "empty_gemini") { GeminiEmptyState(character, greetingText = effectiveGreeting) }
+                            } else if (userSettings.chatInterfaceTheme == "characterai") {
+                                item(key = "empty_cai") {
+                                    val firstGreetingMsgId = allChatMessages.firstOrNull { it.sender == "character" }?.id ?: 0L
+                                    CharacterAiEmptyState(
+                                        character = character,
+                                        onRegenerateClick = {
+                                            if (firstGreetingMsgId > 0L) {
+                                                onRegenerateVariant(firstGreetingMsgId)
+                                            } else {
+                                                onSendMessage(inputText.text, null)
+                                            }
+                                        }
+                                    )
+                                }
+                            } else if (userSettings.chatInterfaceTheme == "janitorai") {
+                                item(key = "empty_janitor") { JanitorAiEmptyState(character) }
+                            }
+                        } else {
+                            if (!isCustomTheme && allChatMessages.isEmpty()) {
+                                item { Spacer(modifier = Modifier.height(10.dp)) }
+                            }
+                            itemsIndexed(
+                                items = allChatMessages,
+                                key = { _, msg -> msg.id },
+                                contentType = { _, msg -> msg.sender }
+                            ) { index, msg ->
+                                val isInlineEditing = inlineEditingMessageId == msg.id
 
                             val prevTimestamp = if (index > 0) allChatMessages[index - 1].timestamp else 0L
                             val showDateHeader = index == 0 || isNewDay(prevTimestamp, msg.timestamp)
@@ -1085,7 +1119,7 @@ fun ChatScreen(
                                     character = character,
                                     userSettings = userSettings,
                                     isLastMessage = msg.id == lastVisibleId,
-                                    isGreetingMessage = (msg.id == firstCharacterMessageId) || (index == 0 && msg.sender == "character"),
+                                    isGreetingMessage = (msg.id == firstCharacterMessageId) || (index == 0 && msg.sender == "character") || msg.content.startsWith("📖 **Краткое содержание"),
                                     isEditing = isInlineEditing,
                                     editingText = if (isInlineEditing) inlineEditingText else msg.content,
                                     onEditingTextChange = { inlineEditingText = it },
@@ -1165,6 +1199,7 @@ fun ChatScreen(
                                 }
                             }
                         }
+                    }
 
                         // Bottom spacer anchor ensuring full view of the last message
                         item(key = "bottom_spacer_anchor") {
@@ -1174,13 +1209,9 @@ fun ChatScreen(
 
                     // ChatGPT-style User Prompt Dots Navigation Bar on the right side
                     if (userPromptAnchors.isNotEmpty()) {
-                        val activeUserAnchorIdx by remember(userPromptAnchors, bannerItemOffset) {
-                            derivedStateOf {
-                                val approxVisibleMsgIdx = (listState.firstVisibleItemIndex + 2 - bannerItemOffset).coerceAtLeast(0)
-                                val found = userPromptAnchors.indexOfLast { it.listIndex <= approxVisibleMsgIdx }
-                                if (found >= 0) found else 0
-                            }
-                        }
+                        val approxVisibleMsgIdx = (listState.firstVisibleItemIndex + 2 - bannerItemOffset).coerceAtLeast(0)
+                        val found = userPromptAnchors.indexOfLast { it.listIndex <= approxVisibleMsgIdx }
+                        val activeUserAnchorIdx = if (found >= 0) found else 0
 
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -1264,11 +1295,8 @@ fun ChatScreen(
                     }
 
                     // Floating Scroll-To-Bottom button if scrolled up (memoized via derivedStateOf to prevent per-pixel recomposition)
-                    val showScrollToBottomFab by remember(allChatMessages.isNotEmpty()) {
-                        derivedStateOf {
-                            allChatMessages.isNotEmpty() && listState.canScrollForward
-                        }
-                    }
+                    val showScrollToBottomFab = allChatMessages.isNotEmpty() && listState.canScrollForward
+                    
                     androidx.compose.animation.AnimatedVisibility(
                         visible = showScrollToBottomFab,
                         enter = fadeIn() + scaleIn(),
@@ -1291,128 +1319,131 @@ fun ChatScreen(
                     }
                 }
 
-                // Quick Formatting / Assistant Quick Action Chips
+                // Quick Formatting / Assistant Quick Action Chips (Classic interface only)
                 val isAssistant = character.name.equals("Untitled Ассистент", ignoreCase = true)
-                Surface(
-                    color = if (isGlassEnabled) glassBg.copy(alpha = (glassAlpha * 0.85f).coerceIn(0.20f, 0.92f)) else MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
-                    border = BorderStroke(0.5.dp, if (isGlassEnabled) glassBorderColor else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
-                    modifier = Modifier
-                        .studioElement("chat_format_chips")
-                        .fillMaxWidth()
-                ) {
-                    LazyRow(
+                if (userSettings.chatInterfaceTheme == "classic") {
+                    Surface(
+                        color = if (isGlassEnabled) glassBg.copy(alpha = (glassAlpha * 0.85f).coerceIn(0.20f, 0.92f)) else MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
+                        border = BorderStroke(0.5.dp, if (isGlassEnabled) glassBorderColor else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
                         modifier = Modifier
+                            .studioElement("chat_format_chips")
                             .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (isAssistant) {
-                            item {
-                                AssistChip(
-                                    onClick = {
-                                        assistantCreatorError = null
-                                        assistantCreatorWishes = ""
-                                        assistantCreatorMode = "bot"
-                                    },
-                                    label = {
-                                        Text(
-                                            if (isFemboy) "🤖 Помоги создать ботика! 🐾" else if (isEn) "🤖 Help create a bot!" else "🤖 Помоги создать бота!",
-                                            fontSize = 11.5.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    },
-                                    colors = AssistChipDefaults.assistChipColors(
-                                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f),
-                                        labelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                                    ),
-                                    shape = RoundedCornerShape(10.dp),
-                                    modifier = Modifier.testTag("assistant_create_bot_btn")
-                                )
-                            }
-                            item {
-                                AssistChip(
-                                    onClick = {
-                                        assistantCreatorError = null
-                                        assistantCreatorWishes = ""
-                                        assistantCreatorMode = "persona"
-                                    },
-                                    label = {
-                                        Text(
-                                            if (isFemboy) "🎭 Помоги создать масочку! 💖" else if (isEn) "🎭 Help create a persona!" else "🎭 Помоги создать персону!",
-                                            fontSize = 11.5.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    },
-                                    colors = AssistChipDefaults.assistChipColors(
-                                        containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f),
-                                        labelColor = MaterialTheme.colorScheme.onSecondaryContainer
-                                    ),
-                                    shape = RoundedCornerShape(10.dp),
-                                    modifier = Modifier.testTag("assistant_create_persona_btn")
-                                )
-                            }
-                            item {
-                                AssistChip(
-                                    onClick = { inputText = insertAtCursor(inputText, "Как настроить OpenRouter и бесплатные модели?", "Как настроить OpenRouter и бесплатные модели?".length) },
-                                    label = { Text("⚙️ Как настроить OpenRouter?", fontSize = 11.sp) },
-                                    shape = RoundedCornerShape(8.dp)
-                                )
-                            }
-                            item {
-                                AssistChip(
-                                    onClick = { inputText = insertAtCursor(inputText, "Проверь мои текущие настройки и подскажи, что можно улучшить.", "Проверь мои текущие настройки и подскажи, что можно улучшить.".length) },
-                                    label = { Text("🔍 Проверь настройки", fontSize = 11.sp) },
-                                    shape = RoundedCornerShape(8.dp)
-                                )
-                            }
-                            item {
-                                AssistChip(
-                                    onClick = { inputText = insertAtCursor(inputText, "Что делать при ошибке 402 Insufficient Quota или 429 Rate Limit?", "Что делать при ошибке 402 Insufficient Quota или 429 Rate Limit?".length) },
-                                    label = { Text("⚠️ Ошибки 402/429", fontSize = 11.sp) },
-                                    shape = RoundedCornerShape(8.dp)
-                                )
-                            }
-                            item {
-                                AssistChip(
-                                    onClick = { inputText = insertAtCursor(inputText, "Расскажи про Telegram-канал движка @untitledAI и поддержку.", "Расскажи про Telegram-канал движка @untitledAI и поддержку.".length) },
-                                    label = { Text("📢 Канал @untitledAI", fontSize = 11.sp) },
-                                    shape = RoundedCornerShape(8.dp)
-                                )
-                            }
-                        } else {
-                            item {
-                                LiquidGlassPillButton(
-                                    text = "**${character.name}**",
-                                    onClick = { inputText = insertAtCursor(inputText, "****", 2) },
-                                    userSettings = userSettings,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                            item {
-                                LiquidGlassPillButton(
-                                    text = "*действие*",
-                                    onClick = { inputText = insertAtCursor(inputText, "**", 1) },
-                                    userSettings = userSettings,
-                                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
-                                )
-                            }
-                            item {
-                                LiquidGlassPillButton(
-                                    text = "<мысль>",
-                                    onClick = { inputText = insertAtCursor(inputText, "<>", 1) },
-                                    userSettings = userSettings
-                                )
+                        LazyRow(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (isAssistant) {
+                                item {
+                                    AssistChip(
+                                        onClick = {
+                                            assistantCreatorError = null
+                                            assistantCreatorWishes = ""
+                                            assistantCreatorMode = "bot"
+                                        },
+                                        label = {
+                                            Text(
+                                                if (isFemboy) "🤖 Помоги создать ботика! 🐾" else if (isEn) "🤖 Help create a bot!" else "🤖 Помоги создать бота!",
+                                                fontSize = 11.5.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        },
+                                        colors = AssistChipDefaults.assistChipColors(
+                                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f),
+                                            labelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                        ),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.testTag("assistant_create_bot_btn")
+                                    )
+                                }
+                                item {
+                                    AssistChip(
+                                        onClick = {
+                                            assistantCreatorError = null
+                                            assistantCreatorWishes = ""
+                                            assistantCreatorMode = "persona"
+                                        },
+                                        label = {
+                                            Text(
+                                                if (isFemboy) "🎭 Помоги создать масочку! 💖" else if (isEn) "🎭 Help create a persona!" else "🎭 Помоги создать персону!",
+                                                fontSize = 11.5.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        },
+                                        colors = AssistChipDefaults.assistChipColors(
+                                            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f),
+                                            labelColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                        ),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.testTag("assistant_create_persona_btn")
+                                    )
+                                }
+                                item {
+                                    AssistChip(
+                                        onClick = { inputText = insertAtCursor(inputText, "Как настроить OpenRouter и бесплатные модели?", "Как настроить OpenRouter и бесплатные модели?".length) },
+                                        label = { AdaptiveIconText(text = "⚙️ Как настроить OpenRouter?", fontSize = 11.sp, iconSize = 14.dp, spacing = 4.dp) },
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                }
+                                item {
+                                    AssistChip(
+                                        onClick = { inputText = insertAtCursor(inputText, "Проверь мои текущие настройки и подскажи, что можно улучшить.", "Проверь мои текущие настройки и подскажи, что можно улучшить.".length) },
+                                        label = { AdaptiveIconText(text = "🔍 Проверь настройки", fontSize = 11.sp, iconSize = 14.dp, spacing = 4.dp) },
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                }
+                                item {
+                                    AssistChip(
+                                        onClick = { inputText = insertAtCursor(inputText, "Что делать при ошибке 402 Insufficient Quota или 429 Rate Limit?", "Что делать при ошибке 402 Insufficient Quota или 429 Rate Limit?".length) },
+                                        label = { AdaptiveIconText(text = "⚠️ Ошибки 402/429", fontSize = 11.sp, iconSize = 14.dp, spacing = 4.dp) },
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                }
+                                item {
+                                    AssistChip(
+                                        onClick = { inputText = insertAtCursor(inputText, "Расскажи про Telegram-канал движка @untitledAI и поддержку.", "Расскажи про Telegram-канал движка @untitledAI и поддержку.".length) },
+                                        label = { AdaptiveIconText(text = "📢 Канал @untitledAI", fontSize = 11.sp, iconSize = 14.dp, spacing = 4.dp) },
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                }
+                            } else {
+                                item {
+                                    LiquidGlassPillButton(
+                                        text = "**${character.name}**",
+                                        onClick = { inputText = insertAtCursor(inputText, "****", 2) },
+                                        userSettings = userSettings,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                item {
+                                    LiquidGlassPillButton(
+                                        text = "*действие*",
+                                        onClick = { inputText = insertAtCursor(inputText, "**", 1) },
+                                        userSettings = userSettings,
+                                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                                    )
+                                }
+                                item {
+                                    LiquidGlassPillButton(
+                                        text = "<мысль>",
+                                        onClick = { inputText = insertAtCursor(inputText, "<>", 1) },
+                                        userSettings = userSettings
+                                    )
+                                }
                             }
                         }
                     }
                 }
 
-                // Input Bar with Liquid Glass
+                // Input Bar Container (Dock plate only in Classic theme; completely transparent in modern themes)
+                val isClassicTheme = userSettings.chatInterfaceTheme == "classic"
                 Surface(
-                    color = glassBg,
-                    shape = if (isGlassEnabled) RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp) else RoundedCornerShape(0.dp),
-                    border = if (isGlassEnabled) BorderStroke(1.dp, glassBorderColor) else null,
+                    color = if (isClassicTheme) glassBg else Color.Transparent,
+                    shape = if (isClassicTheme && isGlassEnabled) RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp) else RoundedCornerShape(0.dp),
+                    border = if (isClassicTheme && isGlassEnabled) BorderStroke(1.dp, glassBorderColor) else null,
                     modifier = Modifier
                         .studioElement("chat_input_bar")
                         .fillMaxWidth()
@@ -1443,10 +1474,12 @@ fun ChatScreen(
                                     )
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Column {
-                                        Text(
+                                        AdaptiveIconText(
                                             text = mediaProcessingStatus.ifBlank { "🎬 Извлечение ключевых кадров видео..." },
-                                            style = MaterialTheme.typography.bodySmall,
-                                            fontWeight = FontWeight.Bold
+                                            textStyle = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.Bold,
+                                            iconSize = 14.dp,
+                                            spacing = 6.dp
                                         )
                                         Text(
                                             text = "Подготовка раскадровки для Vision-модели ИИ",
@@ -1473,11 +1506,13 @@ fun ChatScreen(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
-                                        Text(
+                                        AdaptiveIconText(
                                             text = "📎 Вложения: ${attachedMediaList.size}/${com.example.util.ChatMediaHelper.MAX_MEDIA_COUNT} (фото: $photoCount, видео: $videoCount)",
-                                            style = MaterialTheme.typography.labelSmall,
+                                            textStyle = MaterialTheme.typography.labelSmall,
                                             fontWeight = FontWeight.SemiBold,
-                                            color = MaterialTheme.colorScheme.primary
+                                            textColor = MaterialTheme.colorScheme.primary,
+                                            iconSize = 14.dp,
+                                            spacing = 4.dp
                                         )
                                         Text(
                                             text = "Очистить все",
@@ -1606,12 +1641,135 @@ fun ChatScreen(
                                 )
                             }
                         } else {
-                            Row(
+                            val handleSendMessage: () -> Unit = {
+                                val textToSend = inputText.text
+                                val payloadToSend = com.example.util.ChatMediaHelper.serialize(attachedMediaList)
+                                inputText = TextFieldValue("")
+                                onDraftChange("")
+                                attachedMediaList = emptyList()
+                                isLocalAITyping = true
+                                HapticHelper.performLightHaptic(context, userSettings.naturalHapticsEnabled)
+                                onSendMessage(textToSend, payloadToSend)
+                            }
+
+                            val handleVoiceClick: () -> Unit = {
+                                val permissionCheck = androidx.core.content.ContextCompat.checkSelfPermission(
+                                    context, android.Manifest.permission.RECORD_AUDIO
+                                )
+                                if (permissionCheck == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                                    voiceRecorder.startRecording()
+                                    HapticHelper.performLightHaptic(context, userSettings.naturalHapticsEnabled)
+                                } else {
+                                    recordAudioPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                                }
+                            }
+
+                            when (userSettings.chatInterfaceTheme) {
+                                "deepseek" -> {
+                                    DeepSeekInputBar(
+                                        inputText = inputText,
+                                        onInputTextChange = {
+                                            val textChanged = it.text != inputText.text
+                                            inputText = it
+                                            latestDraftRef[0] = it.text
+                                            if (textChanged) onDraftChange(it.text)
+                                        },
+                                        activeProviderName = activeProfile?.name ?: "Gemini",
+                                        reasoningLevelName = selectedReasoningLevel,
+                                        onSend = handleSendMessage,
+                                        onAttachClick = { showAttachMenu = !showAttachMenu },
+                                        onProviderClick = { showProviderPickerDialog = true },
+                                        onReasoningClick = { showReasoningDialog = true },
+                                        onVoiceClick = handleVoiceClick,
+                                        isAITyping = isAITyping,
+                                        onStopGeneration = {
+                                            isLocalAITyping = false
+                                            HapticHelper.performLightHaptic(context, userSettings.naturalHapticsEnabled)
+                                            onStopGeneration()
+                                        }
+                                    )
+                                }
+                                "gemini" -> {
+                                    GeminiInputBar(
+                                        character = character,
+                                        inputText = inputText,
+                                        onInputTextChange = {
+                                            val textChanged = it.text != inputText.text
+                                            inputText = it
+                                            latestDraftRef[0] = it.text
+                                            if (textChanged) onDraftChange(it.text)
+                                        },
+                                        onSend = handleSendMessage,
+                                        onAttachClick = { showAttachMenu = !showAttachMenu },
+                                        onVoiceClick = handleVoiceClick,
+                                        isAITyping = isAITyping,
+                                        onStopGeneration = {
+                                            isLocalAITyping = false
+                                            HapticHelper.performLightHaptic(context, userSettings.naturalHapticsEnabled)
+                                            onStopGeneration()
+                                        }
+                                    )
+                                }
+                                "characterai" -> {
+                                    val useMaterial3 = userSettings.controlStyle == "material3"
+                                    CharacterAiInputBar(
+                                        inputText = inputText,
+                                        onInputTextChange = {
+                                            val textChanged = it.text != inputText.text
+                                            inputText = it
+                                            latestDraftRef[0] = it.text
+                                            if (textChanged) onDraftChange(it.text)
+                                        },
+                                        effectivePersona = effectivePersona,
+                                        onPersonaClick = { showPersonaSheet = true },
+                                        onSend = handleSendMessage,
+                                        onAttachClick = { showAttachMenu = !showAttachMenu },
+                                        onVoiceClick = handleVoiceClick,
+                                        isAITyping = isAITyping,
+                                        onStopGeneration = {
+                                            isLocalAITyping = false
+                                            HapticHelper.performLightHaptic(context, userSettings.naturalHapticsEnabled)
+                                            onStopGeneration()
+                                        },
+                                        useMaterial3 = useMaterial3
+                                    )
+                                }
+                                "janitorai" -> {
+                                    JanitorAiInputBar(
+                                        inputText = inputText,
+                                        onInputTextChange = {
+                                            val textChanged = it.text != inputText.text
+                                            inputText = it
+                                            latestDraftRef[0] = it.text
+                                            if (textChanged) onDraftChange(it.text)
+                                        },
+                                        reasoningLevelName = selectedReasoningLevel,
+                                        onSend = handleSendMessage,
+                                        onAttachClick = { showAttachMenu = !showAttachMenu },
+                                        onReasoningClick = { showReasoningDialog = true },
+                                        isAITyping = isAITyping,
+                                        onStopGeneration = {
+                                            isLocalAITyping = false
+                                            HapticHelper.performLightHaptic(context, userSettings.naturalHapticsEnabled)
+                                            onStopGeneration()
+                                        }
+                                    )
+                                }
+                                else -> {
+                                    Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(horizontal = 10.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
+                                val actionButtonShape = remember(userSettings.controlStyle, userSettings.buttonShapeWaves, userSettings.buttonShapeDepthPercent) {
+                                    if (userSettings.controlStyle == "material3") {
+                                        com.example.ui.components.WavyScallopedShape(userSettings.buttonShapeWaves, userSettings.buttonShapeDepthPercent)
+                                    } else {
+                                        CircleShape
+                                    }
+                                }
+
                                 // Unified Media Attach Button (Paperclip) with Photo 1 Popup Menu
                                 Box {
                                     IconButton(
@@ -1619,6 +1777,7 @@ fun ChatScreen(
                                         modifier = Modifier
                                             .studioElement("chat_attach_photo_btn")
                                             .size(40.dp)
+                                            .clip(actionButtonShape)
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.AttachFile,
@@ -1743,7 +1902,7 @@ fun ChatScreen(
                                         },
                                         modifier = Modifier
                                             .size(48.dp)
-                                            .clip(CircleShape)
+                                            .clip(actionButtonShape)
                                             .background(MaterialTheme.colorScheme.errorContainer)
                                     ) {
                                         Icon(
@@ -1771,7 +1930,7 @@ fun ChatScreen(
                                             modifier = Modifier
                                                 .studioElement("chat_send_btn")
                                                 .size(48.dp)
-                                                .clip(CircleShape)
+                                                .clip(actionButtonShape)
                                                 .background(MaterialTheme.colorScheme.primary)
                                         ) {
                                             Icon(
@@ -1788,12 +1947,12 @@ fun ChatScreen(
                                         val limitPercent = ((currentTokens.toFloat() / contextLimit.toFloat()) * 100).toInt().coerceIn(10, 100)
 
                                         Surface(
-                                            shape = CircleShape,
+                                            shape = actionButtonShape,
                                             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
                                             border = BorderStroke(1.8.dp, MaterialTheme.colorScheme.primary),
                                             modifier = Modifier
                                                 .size(46.dp)
-                                                .clip(CircleShape)
+                                                .clip(actionButtonShape)
                                                 .clickable {
                                                     inputText = TextFieldValue("")
                                                     onDraftChange("")
@@ -1816,11 +1975,83 @@ fun ChatScreen(
                                     }
                                 }
                             }
+                                }
+                            }
                         }
                     }
                 }
             }
         }
+    }
+    
+    // RAG Debug Dialog
+    if (showRagDebugDialog) {
+        val activeProfile = providerProfiles.find { it.id == chat.providerProfileId } ?: providerProfiles.find { it.isDefaultText }
+        RagDebugDialog(
+            character = character,
+            providerProfile = activeProfile,
+            onDismiss = { showRagDebugDialog = false }
+        )
+    }
+
+    // Context 100% Full Archive & Chronicle Dialog / Free AI Memory
+    if (showContextFullArchiveDialog) {
+        val isContextFull = limitPercent >= 100
+        AlertDialog(
+            onDismissRequest = { showContextFullArchiveDialog = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Archive,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = if (isContextFull) {
+                        if (isEn) "Context Memory 100% Full" else "Контекст заполнен на 100%"
+                    } else {
+                        if (isFemboy) "Новая главка и освобождение памяти ✨" else if (isEn) "Free AI Memory & New Chapter" else "Освободить память ИИ и начать новую главу"
+                    },
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = if (isContextFull) {
+                        if (isEn) "The context limit for this dialogue is 100% full. Would you like to move this chat to Archive (Read-Only) and start a new chat with an AI summary of past events?"
+                        else "Контекст этого диалога полностью заполнен. Желаете перенести текущий чат в Архив (только для чтения) и создать новый чат, где ИИ сожмёт прошлые события в короткий сюжетный рассказ?"
+                    } else {
+                        if (isFemboy) "Текущий чатик отправится в архивчик, а ИИ создаст новую главку с сюжетной сводкой произошедшего! Память очистится на 100%, но ботик ничего не забудет (・ω・)"
+                        else if (isEn) "Current chat will be archived (read-only), and a new chapter will be created with an AI narrative summary of past events. This frees 100% of the active context memory while keeping story continuity."
+                        else "Текущий чат будет перенесен в архив (только для чтения), а в новом чате ИИ создаст сюжетную сводку ключевых событий. Это освободит 100% активной памяти контекста, сохранив память о произошедшем."
+                    },
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showContextFullArchiveDialog = false
+                        onArchiveAndCreateNewChat?.invoke(chat.id, character.id)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Text(
+                        if (isEn) "Archive & Start New Chapter" else "Архивировать и продолжить в новой главе",
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { showContextFullArchiveDialog = false }
+                ) {
+                    Text(if (isEn) "Cancel" else "Отмена")
+                }
+            }
+        )
     }
 
     // Fullscreen Image Dialog
@@ -1912,7 +2143,7 @@ fun ChatScreen(
                             FilterChip(
                                 selected = chatSortMode == "updated_desc",
                                 onClick = { chatSortMode = "updated_desc" },
-                                label = { Text(if (isEn) "🕒 Recent" else "🕒 Свежие", fontSize = 10.sp) },
+                                label = { AdaptiveIconText(text = if (isEn) "🕒 Recent" else "🕒 Свежие", fontSize = 10.sp, iconSize = 12.dp, spacing = 4.dp) },
                                 shape = RoundedCornerShape(8.dp)
                             )
                         }
@@ -1920,7 +2151,7 @@ fun ChatScreen(
                             FilterChip(
                                 selected = chatSortMode == "updated_asc",
                                 onClick = { chatSortMode = "updated_asc" },
-                                label = { Text(if (isEn) "⏳ Oldest" else "⏳ Старые", fontSize = 10.sp) },
+                                label = { AdaptiveIconText(text = if (isEn) "⏳ Oldest" else "⏳ Старые", fontSize = 10.sp, iconSize = 12.dp, spacing = 4.dp) },
                                 shape = RoundedCornerShape(8.dp)
                             )
                         }
@@ -1928,7 +2159,7 @@ fun ChatScreen(
                             FilterChip(
                                 selected = chatSortMode == "title_asc",
                                 onClick = { chatSortMode = "title_asc" },
-                                label = { Text(if (isEn) "🔤 A-Z" else "🔤 А-Я", fontSize = 10.sp) },
+                                label = { AdaptiveIconText(text = if (isEn) "🔤 A-Z" else "🔤 А-Я", fontSize = 10.sp, iconSize = 12.dp, spacing = 4.dp) },
                                 shape = RoundedCornerShape(8.dp)
                             )
                         }
@@ -1936,7 +2167,7 @@ fun ChatScreen(
                             FilterChip(
                                 selected = chatSortMode == "created_desc",
                                 onClick = { chatSortMode = "created_desc" },
-                                label = { Text(if (isEn) "📅 Creation" else "📅 Создание", fontSize = 10.sp) },
+                                label = { AdaptiveIconText(text = if (isEn) "📅 Creation" else "📅 Создание", fontSize = 10.sp, iconSize = 12.dp, spacing = 4.dp) },
                                 shape = RoundedCornerShape(8.dp)
                             )
                         }
@@ -2273,10 +2504,13 @@ fun ChatScreen(
                                             HapticHelper.performLightHaptic(context, userSettings.naturalHapticsEnabled)
                                         },
                                         label = {
-                                            Text(
-                                                text = "${reactionItem.emoji} ${reactionItem.displayTitle(appLang)}",
+                                            AdaptiveIconText(
+                                                emoji = reactionItem.emoji,
+                                                text = reactionItem.displayTitle(appLang),
                                                 fontSize = 11.sp,
-                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                iconSize = 14.dp,
+                                                spacing = 4.dp
                                             )
                                         },
                                         colors = FilterChipDefaults.filterChipColors(
@@ -2366,6 +2600,46 @@ fun ChatScreen(
                                     if (isUserMsg) "Прямое редактирование с возможностью перегенерации" else "Редактирование реплики прямо в чате",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
+                    // Pin to Memory (Закрепить в памяти бота)
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable {
+                                showMessageActionSheet = false
+                                HapticHelper.performLightHaptic(context, userSettings.naturalHapticsEnabled)
+                                val cleanFact = msg.content.trim()
+                                if (cleanFact.isNotBlank()) {
+                                    val newNotes = if (chat.notes.isBlank()) {
+                                        cleanFact
+                                    } else {
+                                        "${chat.notes.trim()}\n- $cleanFact"
+                                    }
+                                    onUpdateChatNotes(chat.id, newNotes)
+                                    Toast.makeText(context, "📌 Факт закреплен в долговременной памяти бота!", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                    ) {
+                        Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.PushPin, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    if (isFemboy) "Закрепить в памяти бота" else if (isEn) "Pin to Bot Memory" else "Закрепить в памяти бота",
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                                Text(
+                                    if (isEn) "Add this message to chat notes, which the bot remembers permanently" else "Добавить реплику в заметки чата, которые бот помнит всегда",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
                                 )
                             }
                         }
@@ -2606,6 +2880,89 @@ fun ChatScreen(
         )
     }
 
+    if (showProviderPickerDialog) {
+        AlertDialog(
+            onDismissRequest = { showProviderPickerDialog = false },
+            title = { Text(if (isEn) "Select Provider Profile" else "Выберите провайдера") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    providerProfiles.forEach { profile ->
+                        val isSelected = activeProfile?.id == profile.id
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                            border = BorderStroke(1.dp, if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable {
+                                    showProviderPickerDialog = false
+                                    onSelectProviderProfile?.invoke(profile.id)
+                                }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column {
+                                    Text(profile.name, fontWeight = FontWeight.Bold)
+                                    Text(profile.providerType, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                if (isSelected) {
+                                    Icon(Icons.Default.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showProviderPickerDialog = false }) { Text("Закрыть") }
+            }
+        )
+    }
+
+    if (showReasoningDialog) {
+        AlertDialog(
+            onDismissRequest = { showReasoningDialog = false },
+            title = { Text(if (isEn) "Select Reasoning Level" else "Уровень мышления / Разгон") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("Выключено", "Быстрый", "Обычный", "Глубокий", "Максимальный").forEach { lvl ->
+                        val isSelected = selectedReasoningLevel == lvl
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                            border = BorderStroke(1.dp, if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable {
+                                    selectedReasoningLevel = lvl
+                                    showReasoningDialog = false
+                                }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(lvl, fontWeight = FontWeight.Bold)
+                                if (isSelected) {
+                                    Icon(Icons.Default.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showReasoningDialog = false }) { Text("Закрыть") }
+            }
+        )
+    }
+
     if (assistantCreatorMode != null) {
         val isBotMode = assistantCreatorMode == "bot"
         Dialog(
@@ -2729,13 +3086,13 @@ fun ChatScreen(
                                 isAssistantCreatorLoading = true
                                 assistantCreatorError = null
                                 if (isBotMode) {
-                                    val handler = onAssistantCreateBot
-                                    if (handler == null) {
+                                    val createBotHandler = onAssistantCreateBot
+                                    if (createBotHandler == null) {
                                         isAssistantCreatorLoading = false
                                         assistantCreatorError = "Функция создания бота недоступна"
                                         return@Button
                                     }
-                                    handler(
+                                    createBotHandler(
                                         wishes,
                                         {
                                             isAssistantCreatorLoading = false
@@ -2747,13 +3104,13 @@ fun ChatScreen(
                                         }
                                     )
                                 } else {
-                                    val handler = onAssistantCreatePersona
-                                    if (handler == null) {
+                                    val createPersonaHandler = onAssistantCreatePersona
+                                    if (createPersonaHandler == null) {
                                         isAssistantCreatorLoading = false
                                         assistantCreatorError = "Функция создания персоны недоступна"
                                         return@Button
                                     }
-                                    handler(
+                                    createPersonaHandler(
                                         wishes,
                                         {
                                             isAssistantCreatorLoading = false
@@ -2805,7 +3162,10 @@ fun MessageItemView(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    if (message.sender == "system") {
+    androidx.compose.runtime.CompositionLocalProvider(
+        com.example.ui.components.LocalIconPack provides userSettings.iconPack
+    ) {
+        if (message.sender == "system") {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -2824,7 +3184,7 @@ fun MessageItemView(
                 )
             }
         }
-        return
+        return@CompositionLocalProvider
     }
 
     val isUser = message.sender == "user"
@@ -2839,9 +3199,12 @@ fun MessageItemView(
             1
         } else {
             val cacheKey = message.id * 31L + raw.length.toLong()
-            synchronized(variantsCountCache) {
+            val cachedVal = synchronized(variantsCountCache) {
                 variantsCountCache.get(cacheKey)
-            } ?: run {
+            }
+            if (cachedVal != null) {
+                cachedVal
+            } else {
                 val parsedCount = try {
                     org.json.JSONArray(raw).length().coerceAtLeast(1)
                 } catch (_: Exception) { 1 }
@@ -2960,7 +3323,7 @@ fun MessageItemView(
 
             // Header: Avatar & Name
             // In novel mode, bot's name is removed per user request. User's label is kept subtle or shown in bubble mode.
-            val showHeader = if (isNovel) isUser else true
+            val showHeader = !isNovel || isUser
             if (showHeader) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -3043,13 +3406,15 @@ fun MessageItemView(
                             color = Color.Black.copy(alpha = 0.65f),
                             modifier = Modifier.align(Alignment.TopEnd)
                         ) {
-                            Text(
+                            AdaptiveIconText(
                                 text = if (isVideoMsg) "🎬 Видео" else if (isUser) "📷 Ваше фото" else "📷 Иллюстрация",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color.White,
+                                textStyle = MaterialTheme.typography.labelSmall,
+                                textColor = Color.White,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                                 fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold
+                                fontWeight = FontWeight.SemiBold,
+                                iconSize = 12.dp,
+                                spacing = 4.dp
                             )
                         }
                     }
@@ -3060,12 +3425,14 @@ fun MessageItemView(
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(10.dp))
                     ) {
-                        Text(
+                        AdaptiveIconText(
                             text = "📎 Прикреплено ${mediaItems.size} медиа:",
-                            style = MaterialTheme.typography.labelSmall,
+                            textStyle = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(bottom = 4.dp)
+                            textColor = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(bottom = 4.dp),
+                            iconSize = 14.dp,
+                            spacing = 4.dp
                         )
                         LazyRow(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -3159,11 +3526,13 @@ fun MessageItemView(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
+                            AdaptiveIconText(
                                 text = if (isUser) "✏️ Редактирование сообщения" else "✏️ Редактирование реплики бота",
-                                style = MaterialTheme.typography.labelMedium,
+                                textStyle = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
+                                textColor = MaterialTheme.colorScheme.primary,
+                                iconSize = 14.dp,
+                                spacing = 4.dp
                             )
                         }
 
@@ -3336,12 +3705,14 @@ fun MessageItemView(
                     color = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
                     border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
                 ) {
-                    Text(
+                    AdaptiveIconText(
                         text = "💡 Рассуждение: ${message.internalReasoning}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(6.dp),
-                        fontSize = 10.sp
+                        textStyle = MaterialTheme.typography.labelSmall,
+                        textColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 10.sp,
+                        iconSize = 12.dp,
+                        spacing = 4.dp,
+                        modifier = Modifier.padding(6.dp)
                     )
                 }
             }
@@ -3369,7 +3740,7 @@ fun MessageItemView(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Text(text = reactionInfo.emoji, fontSize = 13.sp)
+                        AdaptiveUiIcon(emoji = reactionInfo.emoji, size = 14.dp)
                         Text(
                             text = reactionInfo.titleRu,
                             style = MaterialTheme.typography.labelSmall,
@@ -3603,6 +3974,7 @@ fun MessageItemView(
             }
         }
     }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -3813,8 +4185,167 @@ fun SelectChatPersonaSheet(
 
 private val variantsCountCache = androidx.collection.LruCache<Long, Int>(500)
 private val dateHeaderCache = androidx.collection.LruCache<Long, String>(100)
-private val ruDateFormat = SimpleDateFormat("d MMMM yyyy", Locale("ru"))
+private val ruDateFormat = java.text.SimpleDateFormat("d MMMM yyyy", java.util.Locale("ru"))
 private val cachedLocalTzOffsetMs = java.util.TimeZone.getDefault().rawOffset.toLong()
+
+@Composable
+fun RagDebugDialog(
+    character: CharacterEntity,
+    providerProfile: AiProviderProfileEntity?,
+    onDismiss: () -> Unit
+) {
+    var chunks by remember { mutableStateOf<List<com.example.ai.rag.LoreChunk>>(emptyList()) }
+    var isIndexing by remember { mutableStateOf(false) }
+    var testQuery by remember { mutableStateOf("") }
+    var scoredChunks by remember { mutableStateOf<List<com.example.ai.rag.ScoredChunk>>(emptyList()) }
+    
+    val coroutineScope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    LaunchedEffect(character.id) {
+        val db = com.example.data.local.AppDatabase.getDatabase(context)
+        val provider = com.example.ai.rag.RemoteEmbeddingProvider(
+            apiKey = providerProfile?.apiKey ?: "",
+            baseUrl = providerProfile?.baseUrl ?: "",
+            model = null,
+            providerType = providerProfile?.providerType
+        )
+        isIndexing = true
+        val fullLoreText = com.example.ai.rag.RagManager.extractStandardLoreText(character)
+        chunks = com.example.ai.rag.RagManager.getIndexedChunks(character.id, fullLoreText, provider, db.loreChunkDao())
+        isIndexing = false
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("База знаний RAG и Векторы", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.8f)) {
+                if (isIndexing) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Индексация векторов (может занять время)...", style = MaterialTheme.typography.bodySmall)
+                    }
+                } else {
+                    OutlinedTextField(
+                        value = testQuery,
+                        onValueChange = { testQuery = it },
+                        label = { Text("Тестовый запрос") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                coroutineScope.launch {
+                                    if (testQuery.isNotBlank()) {
+                                        val provider = com.example.ai.rag.RemoteEmbeddingProvider(
+                                            apiKey = providerProfile?.apiKey ?: "",
+                                            baseUrl = providerProfile?.baseUrl ?: "",
+                                            model = null,
+                                            providerType = providerProfile?.providerType
+                                        )
+                                        val qEmb = provider.getEmbedding(testQuery)
+                                        val retriever = com.example.ai.rag.HybridRetriever()
+                                        scoredChunks = retriever.retrieve(testQuery, chunks, qEmb)
+                                    }
+                                }
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp)
+                        ) {
+                            Text("Тест скоринга", fontSize = 12.sp)
+                        }
+
+                        Button(
+                            onClick = {
+                                coroutineScope.launch {
+                                    isIndexing = true
+                                    val provider = com.example.ai.rag.RemoteEmbeddingProvider(
+                                        apiKey = providerProfile?.apiKey ?: "",
+                                        baseUrl = providerProfile?.baseUrl ?: "",
+                                        model = null,
+                                        providerType = providerProfile?.providerType
+                                    )
+                                    val fullLoreText = com.example.ai.rag.RagManager.extractStandardLoreText(character)
+                                    val db = com.example.data.local.AppDatabase.getDatabase(context)
+                                    chunks = com.example.ai.rag.RagManager.reindexCharacter(character.id, fullLoreText, provider, db.loreChunkDao())
+                                    scoredChunks = emptyList()
+                                    isIndexing = false
+                                }
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                        ) {
+                            Text("Перерезать чанки", fontSize = 12.sp)
+                        }
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(12.dp))
+                val itemsToShow = if (scoredChunks.isNotEmpty()) scoredChunks.map { it.chunk to it.score } else chunks.map { it to 0.0 }
+                
+                LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(itemsToShow.size) { i ->
+                        val (chunk, score) = itemsToShow[i]
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Чанк ID: ${chunk.id}", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                                    IconButton(
+                                        onClick = {
+                                            val clip = android.content.ClipData.newPlainText("Chunk Text", chunk.text)
+                                            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                            clipboard.setPrimaryClip(clip)
+                                        },
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Icon(Icons.Default.ContentCopy, contentDescription = "Копировать чанк", modifier = Modifier.size(14.dp))
+                                    }
+                                }
+                                if (score > 0) {
+                                    Text("RRF Score: %.4f".format(score), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                }
+                                SelectionContainer {
+                                    Text(chunk.text.take(150) + if (chunk.text.length > 150) "..." else "", style = MaterialTheme.typography.bodySmall)
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text("Ключи: ${chunk.keywords.joinToString(", ")}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                if (chunk.embedding != null) {
+                                    val embType = if (chunk.embedding.size == com.example.ai.rag.LocalEmbeddingGenerator.DIMENSION) "локальный" else "AI API"
+                                    Text("Вектор активен ($embType, dim ${chunk.embedding.size}): [${chunk.embedding.take(4).joinToString(", ")}...]", style = MaterialTheme.typography.labelSmall, color = Color(0xFF10B981))
+                                } else {
+                                    Text("Вектор отсутствует", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Закрыть") }
+        }
+    )
+}
 
 private fun getEpochDay(timestamp: Long): Long {
     return (timestamp + cachedLocalTzOffsetMs) / 86_400_000L

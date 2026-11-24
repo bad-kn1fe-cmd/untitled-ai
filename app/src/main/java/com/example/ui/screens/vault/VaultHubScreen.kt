@@ -5,6 +5,8 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import com.example.R
+import com.example.ui.components.motionBlurOnScroll
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -56,6 +58,8 @@ import com.example.data.repository.StoreBotItem
 import com.example.ui.components.AppAsyncImage
 import com.example.ui.components.AvatarImage
 import com.example.ui.components.FontPickerDialog
+import com.example.ui.components.AdaptiveIconText
+import com.example.ui.components.AdaptiveUiIcon
 import com.example.ui.screens.characters.ChatSelectionDialog
 import com.example.ui.viewmodels.MainViewModel
 import com.example.ui.viewmodels.MainViewModel.StoreUiState
@@ -108,6 +112,7 @@ fun VaultHubScreen(
     onToggleArchiveCharacter: (Long, Boolean) -> Unit,
     onDeleteCharacter: (CharacterEntity) -> Unit,
     onOpenProviders: () -> Unit,
+    onOpenPlugins: () -> Unit = {},
     onOpenPersonas: () -> Unit,
     onOpenStore: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -245,6 +250,7 @@ fun VaultHubScreen(
             QuickActionItem(if (isFemboy) "Масочки" else if (isEn) "Personas" else "Персоны", Icons.Default.Face, Color(0xFF10B981).copy(alpha = 0.2f), Color(0xFFA7F3D0), onOpenPersonas),
             QuickActionItem(if (isFemboy) "Шрифтики" else if (isEn) "Fonts" else "Шрифты", Icons.Default.TextFields, Color(0xFF6366F1).copy(alpha = 0.2f), Color(0xFFA5B4FC)) { showFontDialog = true },
             QuickActionItem(if (isFemboy) "Стиль (uwu)" else if (isEn) "Style" else "Стиль", Icons.Default.Palette, Color(0xFFEC4899).copy(alpha = 0.2f), Color(0xFFFBCFE8), onOpenSettings),
+            QuickActionItem(if (isFemboy) "Плагинчики" else if (isEn) "Plugins" else "Плагины", Icons.Default.Extension, Color(0xFFE11D48).copy(alpha = 0.2f), Color(0xFFFDA4AF), onOpenPlugins),
             QuickActionItem(if (isFemboy) "Сохраняшки" else if (isEn) "Backup" else "Бэкап", Icons.Default.Save, Color(0xFF14B8A6).copy(alpha = 0.2f), Color(0xFF99F6E4), onOpenBackup)
         )
     }
@@ -285,6 +291,14 @@ fun VaultHubScreen(
                 val matchesTag = selectedTagFilter == null || bot.tags.contains(selectedTagFilter)
                 matchesQuery && matchesTag
             }
+        }
+    }
+
+    var remotePetsCatalog by remember { mutableStateOf(com.example.util.PetManager.getCachedPets()) }
+    LaunchedEffect(Unit) {
+        val cat = com.example.util.PetManager.fetchPetCatalog()
+        if (cat.pets.isNotEmpty()) {
+            remotePetsCatalog = cat.pets
         }
     }
 
@@ -378,8 +392,12 @@ fun VaultHubScreen(
             when (currentVaultTab) {
                 0 -> {
                     // MAIN VAULT TAB: Banners, Quick Actions, and GitHub Box.json Online Showcase
+                    val vaultListState = rememberLazyListState()
                     LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
+                        state = vaultListState,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .motionBlurOnScroll(userSettings.pluginMotionBlurEnabled, vaultListState, userSettings.pluginMotionBlurIntensity),
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
@@ -431,7 +449,7 @@ fun VaultHubScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 quickActions.take(4).forEach { action ->
-                                    QuickActionButtonItem(action = action)
+                                    QuickActionButtonItem(action = action, userSettings = userSettings)
                                 }
                             }
                             Spacer(modifier = Modifier.height(8.dp))
@@ -440,7 +458,7 @@ fun VaultHubScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 quickActions.drop(4).take(4).forEach { action ->
-                                    QuickActionButtonItem(action = action)
+                                    QuickActionButtonItem(action = action, userSettings = userSettings)
                                 }
                             }
                         }
@@ -668,16 +686,16 @@ fun VaultHubScreen(
                                                 modifier = Modifier.size(38.dp)
                                             ) {
                                                 Box(contentAlignment = Alignment.Center) {
-                                                    Text("🐾", fontSize = 20.sp)
+                                                    AdaptiveUiIcon("🐾", size = 20.dp, tint = MaterialTheme.colorScheme.primary)
                                                 }
                                             }
                                             Spacer(modifier = Modifier.width(10.dp))
                                             Column {
-                                                Text(
+                                                AdaptiveIconText(
                                                     text = if (isFemboy) "🐾 Хранилище питомцев (uwu)" else if (isEn) "🐾 Pet Vault" else "🐾 Хранилище питомцев",
-                                                    style = MaterialTheme.typography.titleMedium,
+                                                    textStyle = MaterialTheme.typography.titleMedium,
                                                     fontWeight = FontWeight.ExtraBold,
-                                                    color = MaterialTheme.colorScheme.primary
+                                                    textColor = MaterialTheme.colorScheme.primary
                                                 )
                                                 Text(
                                                     text = if (isEn) "Select your active screen companion pet" else "Выбирайте активного питомца для экрана и общения",
@@ -691,19 +709,34 @@ fun VaultHubScreen(
 
                                     Spacer(modifier = Modifier.height(14.dp))
 
-                                    // Pet Cards (Static Sprite Previews)
-                                    val petsList = listOf(
-                                        Triple("classic", if (isFemboy) "🐱 Бойкиссер (>w<)" else if (isEn) "🐱 Boykisser" else "🐱 Бойкиссер", R.drawable.boykisser_classic),
-                                        Triple("pochita", if (isFemboy) "🐶 Почита ✨" else if (isEn) "🐶 Pochita" else "🐶 Почита ✨", R.drawable.pochita_classic)
-                                    )
-
-                                    Row(
+                                    // Pet Cards (Static Sprite Previews loaded from GitHub, up to 3 active)
+                                    LazyRow(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                                     ) {
-                                        petsList.forEach { (petId, petTitle, spriteRes) ->
-                                            val isSelected = if (petId == "pochita") userSettings.boykisserPetVariant.equals("pochita", ignoreCase = true)
-                                            else !userSettings.boykisserPetVariant.equals("pochita", ignoreCase = true)
+                                        items(remotePetsCatalog, key = { it.id }) { pet ->
+                                            val petTitle = if (isEn) pet.nameEn else pet.nameRu
+                                            val activePetsList = userSettings.getActivePetsList()
+                                            val isSelected = activePetsList.any { it.equals(pet.id, ignoreCase = true) || (pet.id == "boykisser" && it.equals("classic", ignoreCase = true)) }
+
+                                            val togglePet = {
+                                                val currentList = activePetsList.toMutableList()
+                                                val isCurrentlySelected = currentList.any { it.equals(pet.id, ignoreCase = true) || (pet.id == "boykisser" && it.equals("classic", ignoreCase = true)) }
+                                                if (isCurrentlySelected) {
+                                                    currentList.removeAll { it.equals(pet.id, ignoreCase = true) || (pet.id == "boykisser" && it.equals("classic", ignoreCase = true)) }
+                                                } else {
+                                                    if (currentList.size >= 3) currentList.removeAt(0)
+                                                    currentList.add(pet.id)
+                                                }
+                                                val newJson = org.json.JSONArray(currentList).toString()
+                                                val firstPet = currentList.firstOrNull() ?: ""
+                                                val isEnabled = currentList.isNotEmpty()
+                                                onUpdateSettings(userSettings.copy(
+                                                    selectedPetsJson = newJson,
+                                                    boykisserPetVariant = firstPet,
+                                                    boykisserPetEnabled = isEnabled
+                                                ))
+                                            }
 
                                             Surface(
                                                 shape = RoundedCornerShape(16.dp),
@@ -713,17 +746,15 @@ fun VaultHubScreen(
                                                     if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
                                                 ),
                                                 modifier = Modifier
-                                                    .weight(1f)
+                                                    .width(130.dp)
                                                     .clip(RoundedCornerShape(16.dp))
-                                                    .clickable {
-                                                        onUpdateSettings(userSettings.copy(boykisserPetVariant = petId, boykisserPetEnabled = true))
-                                                    }
+                                                    .clickable { togglePet() }
                                             ) {
                                                 Column(
                                                     modifier = Modifier.padding(12.dp),
                                                     horizontalAlignment = Alignment.CenterHorizontally
                                                 ) {
-                                                    // Static Sprite Preview
+                                                    // Static Sprite Preview from Remote URL
                                                     Box(
                                                         modifier = Modifier
                                                             .size(64.dp)
@@ -731,8 +762,8 @@ fun VaultHubScreen(
                                                             .background(Color.Black.copy(alpha = 0.25f)),
                                                         contentAlignment = Alignment.Center
                                                     ) {
-                                                        Image(
-                                                            painter = painterResource(id = spriteRes),
+                                                        com.example.ui.components.AppAsyncImage(
+                                                            model = pet.imageUrl,
                                                             contentDescription = petTitle,
                                                             modifier = Modifier.size(52.dp)
                                                         )
@@ -741,19 +772,18 @@ fun VaultHubScreen(
                                                     Spacer(modifier = Modifier.height(8.dp))
 
                                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                                        RadioButton(
+                                                        FilterChip(
                                                             selected = isSelected,
-                                                            onClick = {
-                                                                onUpdateSettings(userSettings.copy(boykisserPetVariant = petId, boykisserPetEnabled = true))
+                                                            onClick = { togglePet() },
+                                                            label = {
+                                                                Text(
+                                                                    text = petTitle,
+                                                                    fontSize = 11.5.sp,
+                                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                                    maxLines = 1
+                                                                )
                                                             },
-                                                            modifier = Modifier.size(20.dp)
-                                                        )
-                                                        Spacer(modifier = Modifier.width(6.dp))
-                                                        Text(
-                                                            text = petTitle,
-                                                            style = MaterialTheme.typography.labelMedium,
-                                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                                            fontSize = 12.sp
+                                                            shape = RoundedCornerShape(8.dp)
                                                         )
                                                     }
                                                 }
@@ -966,12 +996,14 @@ fun StoreBotCardItem(
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         if (chatsCount > 1) {
                             Surface(shape = RoundedCornerShape(6.dp), color = MaterialTheme.colorScheme.primary) {
-                                Text(
+                                AdaptiveIconText(
                                     text = "💬 $chatsCount ветки",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    textStyle = MaterialTheme.typography.labelSmall,
+                                    textColor = MaterialTheme.colorScheme.onPrimary,
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
+                                    iconSize = 12.dp,
+                                    spacing = 4.dp,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
                             }
@@ -1149,7 +1181,18 @@ fun VaultHeroBannerCard(item: VaultBannerItem) {
 }
 
 @Composable
-fun QuickActionButtonItem(action: QuickActionItem) {
+fun QuickActionButtonItem(
+    action: QuickActionItem,
+    userSettings: UserSettings
+) {
+    val buttonShape = remember(userSettings.controlStyle, userSettings.buttonShapeWaves, userSettings.buttonShapeDepthPercent) {
+        if (userSettings.controlStyle == "material3") {
+            com.example.ui.components.WavyScallopedShape(userSettings.buttonShapeWaves, userSettings.buttonShapeDepthPercent)
+        } else {
+            RoundedCornerShape(16.dp)
+        }
+    }
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
@@ -1157,7 +1200,7 @@ fun QuickActionButtonItem(action: QuickActionItem) {
             .clickable { action.onClick() }
     ) {
         Surface(
-            shape = RoundedCornerShape(16.dp),
+            shape = buttonShape,
             color = action.containerColor,
             modifier = Modifier.size(52.dp)
         ) {
@@ -1290,7 +1333,14 @@ fun VaultChatsTab(
                 FilterChip(
                     selected = selectedCategory == id,
                     onClick = { selectedCategory = id },
-                    label = { Text(label, fontSize = 11.5.sp) },
+                    label = {
+                        AdaptiveIconText(
+                            text = label,
+                            fontSize = 11.5.sp,
+                            iconSize = 14.dp,
+                            spacing = 4.dp
+                        )
+                    },
                     shape = RoundedCornerShape(8.dp)
                 )
             }
@@ -1326,11 +1376,13 @@ fun VaultChatsTab(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text(
+                    AdaptiveIconText(
                         text = "📁 Папка «${currentFolder.name}» (${currentFolder.characterIds.size} ботов)",
-                        style = MaterialTheme.typography.labelMedium,
+                        textStyle = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
+                        textColor = MaterialTheme.colorScheme.primary,
+                        iconSize = 14.dp,
+                        spacing = 4.dp
                     )
                     TextButton(
                         onClick = {
@@ -1456,12 +1508,14 @@ fun VaultChatsTab(
                                             val icon = if (board != null && board.edges.isNotEmpty()) "🕸" else "📊"
                                             "$icon $relTitle • $sign$relPercent%"
                                         }
-                                        Text(
+                                        AdaptiveIconText(
                                             text = relText,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = Color.White,
+                                            textStyle = MaterialTheme.typography.labelSmall,
+                                            textColor = Color.White,
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.SemiBold,
+                                            iconSize = 12.dp,
+                                            spacing = 4.dp,
                                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                         )
                                     }
@@ -1472,12 +1526,14 @@ fun VaultChatsTab(
                                                 shape = RoundedCornerShape(6.dp),
                                                 color = MaterialTheme.colorScheme.primary
                                             ) {
-                                                Text(
+                                                AdaptiveIconText(
                                                     text = "💬 $chatCount ветки",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.onPrimary,
+                                                    textStyle = MaterialTheme.typography.labelSmall,
+                                                    textColor = MaterialTheme.colorScheme.onPrimary,
                                                     fontSize = 10.sp,
                                                     fontWeight = FontWeight.Bold,
+                                                    iconSize = 12.dp,
+                                                    spacing = 4.dp,
                                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                                 )
                                             }
@@ -1863,10 +1919,12 @@ fun VaultChatsTab(
                                             }
                                         )
                                         Spacer(modifier = Modifier.width(6.dp))
-                                        Text(
+                                        AdaptiveIconText(
                                             text = "📁 ${folder.name}",
                                             fontWeight = if (isInFolder) FontWeight.Bold else FontWeight.Normal,
-                                            style = MaterialTheme.typography.bodyMedium
+                                            textStyle = MaterialTheme.typography.bodyMedium,
+                                            iconSize = 16.dp,
+                                            spacing = 6.dp
                                         )
                                     }
                                 }

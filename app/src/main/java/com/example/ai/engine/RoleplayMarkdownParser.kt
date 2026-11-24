@@ -17,9 +17,14 @@ sealed class RoleplaySpanType {
     data class Dialogue(val text: String) : RoleplaySpanType()
 }
 
+data class ParsedMarkdownResult(
+    val annotated: AnnotatedString,
+    val emojis: Set<String>
+)
+
 object RoleplayMarkdownParser {
 
-    private val cache = LruCache<String, AnnotatedString>(300)
+    private val cache = LruCache<String, ParsedMarkdownResult>(300)
 
     private val THOUGHT_TAG_REGEX = Regex(
         """<(?:thought|thoughts|think|мысли|мысль)>([\s\S]*?)<\/(?:thought|thoughts|think|мысли|мысль)>""",
@@ -40,13 +45,18 @@ object RoleplayMarkdownParser {
         rawText: String,
         accentColor: Color,
         textColor: Color,
-        baseFontSizeSp: Int = 15
+        baseFontSizeSp: Int = 15,
+        iconPack: String = "system",
+        collectedEmojis: MutableSet<String>? = null
     ): AnnotatedString {
         if (rawText.isEmpty()) return AnnotatedString("")
 
-        val cacheKey = "${rawText.hashCode()}_${accentColor.value}_${textColor.value}_$baseFontSizeSp"
+        val cacheKey = "${rawText.hashCode()}_${accentColor.value}_${textColor.value}_${baseFontSizeSp}_$iconPack"
         val cached = cache.get(cacheKey)
-        if (cached != null) return cached
+        if (cached != null) {
+            collectedEmojis?.addAll(cached.emojis)
+            return cached.annotated
+        }
 
         // Normalize XML-style thought tags first into clean bracketed thoughts
         var normalized = rawText
@@ -59,6 +69,8 @@ object RoleplayMarkdownParser {
         val actionColor = textColor.copy(alpha = 0.72f)
         val thoughtColor = accentColor.copy(alpha = 0.85f)
         val codeColor = accentColor
+
+        val localCollected = if (iconPack != "system") mutableSetOf<String>() else null
 
         val result = buildAnnotatedString {
             // Process text by scanning character by character with lookahead tokens
@@ -79,7 +91,7 @@ object RoleplayMarkdownParser {
                                 fontSize = (baseFontSizeSp - 1f).sp
                             )
                         )
-                        append(codeContent)
+                        com.example.ui.components.EmojiInlineHelper.appendWithEmojis(this, codeContent, iconPack, localCollected)
                         pop()
                         i = endCode + 1
                         continue
@@ -101,7 +113,9 @@ object RoleplayMarkdownParser {
                                 fontSize = (baseFontSizeSp - 0.5f).sp
                             )
                         )
-                        append("‹$thoughtContent›")
+                        append("‹")
+                        com.example.ui.components.EmojiInlineHelper.appendWithEmojis(this, thoughtContent, iconPack, localCollected)
+                        append("›")
                         pop()
                         i = endThought + 1
                         continue
@@ -126,7 +140,7 @@ object RoleplayMarkdownParser {
                                 fontSize = baseFontSizeSp.sp
                             )
                         )
-                        append(content)
+                        com.example.ui.components.EmojiInlineHelper.appendWithEmojis(this, content, iconPack, localCollected)
                         pop()
                         i = endBoldItalic + 3
                         continue
@@ -150,7 +164,7 @@ object RoleplayMarkdownParser {
                                 fontSize = (baseFontSizeSp + 0.5f).sp
                             )
                         )
-                        append(content)
+                        com.example.ui.components.EmojiInlineHelper.appendWithEmojis(this, content, iconPack, localCollected)
                         pop()
                         i = endBold + 2
                         continue
@@ -173,7 +187,9 @@ object RoleplayMarkdownParser {
                                     fontSize = baseFontSizeSp.sp
                                 )
                             )
-                            append("*$actionContent*")
+                            append("*")
+                            com.example.ui.components.EmojiInlineHelper.appendWithEmojis(this, actionContent, iconPack, localCollected)
+                            append("*")
                             pop()
                             i = endAction + 1
                             continue
@@ -191,12 +207,14 @@ object RoleplayMarkdownParser {
                         fontSize = baseFontSizeSp.sp
                     )
                 )
-                append(plainText)
+                com.example.ui.components.EmojiInlineHelper.appendWithEmojis(this, plainText, iconPack, localCollected)
                 pop()
                 i = nextSpecial
             }
         }
-        cache.put(cacheKey, result)
+        val foundEmojis = localCollected?.toSet() ?: emptySet()
+        collectedEmojis?.addAll(foundEmojis)
+        cache.put(cacheKey, ParsedMarkdownResult(result, foundEmojis))
         return result
     }
 

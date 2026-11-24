@@ -417,8 +417,22 @@ class BackupRepository(private val context: Context, private val db: AppDatabase
                         val userPrefs = com.example.data.datastore.UserPreferencesRepository(context)
                         val currentSettings = userPrefs.userSettingsFlow.first()
                         rootJson.put("settings", JSONObject().apply {
+                            // 1. Theme & Appearance
                             put("themeMode", currentSettings.themeMode)
                             put("accentColorLong", currentSettings.accentColorLong)
+                            put("appIconVariant", currentSettings.appIconVariant)
+                            put("fontFamilyChoice", currentSettings.fontFamilyChoice)
+                            put("customFontPath", copyUriToZip(zipOut, currentSettings.customFontPath, "fonts", processedMap))
+                            put("customFontName", currentSettings.customFontName)
+                            put("uiVariant", currentSettings.uiVariant)
+                            put("vaultHubStartTab", currentSettings.vaultHubStartTab)
+                            put("controlStyle", currentSettings.controlStyle)
+                            put("customContextLimit", currentSettings.customContextLimit)
+
+                            // 2. Language & Localization
+                            put("appLanguage", currentSettings.appLanguage)
+
+                            // 3. Wallpapers & Live Video
                             put("chatWallpaperPreset", currentSettings.chatWallpaperPreset)
                             put("customWallpaperUri", copyUriToZip(zipOut, currentSettings.customWallpaperUri, "wallpapers", processedMap))
                             put("customWallpapersJson", copyUriArrayToZip(zipOut, currentSettings.customWallpapersJson, "wallpapers", processedMap))
@@ -427,28 +441,94 @@ class BackupRepository(private val context: Context, private val db: AppDatabase
                             put("appThemeBackgroundPreset", currentSettings.appThemeBackgroundPreset)
                             put("appCustomBackgroundUri", copyUriToZip(zipOut, currentSettings.appCustomBackgroundUri, "wallpapers", processedMap))
                             put("appCustomBackgroundAlpha", currentSettings.appCustomBackgroundAlpha.toDouble())
+                            put("parallaxEnabled", currentSettings.parallaxEnabled)
+                            put("chatWallpaperAlpha", currentSettings.chatWallpaperAlpha.toDouble())
+                            put("wallpaperTone", currentSettings.wallpaperTone)
+
+                            // 4. Frames & Glassmorphism
                             put("userActiveFrameUri", copyUriToZip(zipOut, currentSettings.userActiveFrameUri, "frames", processedMap))
                             put("userFramesJson", copyUriArrayToZip(zipOut, currentSettings.userFramesJson, "frames", processedMap))
-                            put("customFontPath", copyUriToZip(zipOut, currentSettings.customFontPath, "fonts", processedMap))
-                            put("customFontName", currentSettings.customFontName)
-                            put("chatWallpaperAlpha", currentSettings.chatWallpaperAlpha.toDouble())
-                            put("fontSizeSp", currentSettings.fontSizeSp)
-                            put("bubbleStyle", currentSettings.bubbleStyle)
+                            put("frameParallaxEnabled", currentSettings.frameParallaxEnabled)
+                            put("frameParallaxSensitivity", currentSettings.frameParallaxSensitivity.toDouble())
+                            put("frameParallaxMaxOffset", currentSettings.frameParallaxMaxOffset.toDouble())
                             put("glassmorphismEnabled", currentSettings.glassmorphismEnabled)
-                            put("wallpaperTone", currentSettings.wallpaperTone)
                             put("glassAlpha", currentSettings.glassAlpha.toDouble())
                             put("glassBlurRadius", currentSettings.glassBlurRadius.toDouble())
                             put("glassBorderGlow", currentSettings.glassBorderGlow)
                             put("glassSpecularIntensity", currentSettings.glassSpecularIntensity.toDouble())
-                            put("frameParallaxEnabled", currentSettings.frameParallaxEnabled)
-                            put("frameParallaxSensitivity", currentSettings.frameParallaxSensitivity.toDouble())
-                            put("frameParallaxMaxOffset", currentSettings.frameParallaxMaxOffset.toDouble())
+
+                            // 5. Adaptive Accent Tinting
+                            put("accentTintIntensity", currentSettings.accentTintIntensity.toDouble())
+
+                            // 6. Pets (Boykisser & Pochita)
+                            put("boykisserPetEnabled", currentSettings.boykisserPetEnabled)
+                            put("boykisserPetVariant", currentSettings.boykisserPetVariant)
+                            put("boykisserPetSpeed", currentSettings.boykisserPetSpeed.toDouble())
+                            put("boykisserMainBehavior", currentSettings.boykisserMainBehavior)
+                            put("boykisserChatBehavior", currentSettings.boykisserChatBehavior)
+                            put("selectedPetsJson", currentSettings.selectedPetsJson)
+                            put("appIconStyle", currentSettings.appIconStyle)
+
+                            // 7. Chat Style & Novel Dividers
+                            put("fontSizeSp", currentSettings.fontSizeSp)
+                            put("bubbleStyle", currentSettings.bubbleStyle)
+                            put("showAvatarInChat", currentSettings.showAvatarInChat)
                             put("novelDividerEnabled", currentSettings.novelDividerEnabled)
                             put("novelDividerWidthPercent", currentSettings.novelDividerWidthPercent)
                             put("novelDividerThicknessDp", currentSettings.novelDividerThicknessDp)
                             put("novelDividerAlpha", currentSettings.novelDividerAlpha.toDouble())
                             put("novelDividerColorHex", currentSettings.novelDividerColorHex)
                             put("novelTextAlignment", currentSettings.novelTextAlignment)
+
+                            // 8. Animations
+                            put("tabSwitchAnimation", currentSettings.tabSwitchAnimation)
+                            put("tabSwitchDurationMs", currentSettings.tabSwitchDurationMs)
+                            put("chatScrollAnimation", currentSettings.chatScrollAnimation)
+                            put("hotbarAnimation", currentSettings.hotbarAnimation)
+                            put("isHotbarVisible", currentSettings.isHotbarVisible)
+                            put("animationPerformanceMode", currentSettings.animationPerformanceMode)
+
+                            // 9. Behavior & Parameters
+                            put("defaultMaxTokens", currentSettings.defaultMaxTokens)
+                            put("contextWindowSize", currentSettings.contextWindowSize)
+                            put("characterLimitMode", currentSettings.characterLimitMode)
+                            put("botTextAppearanceMode", currentSettings.botTextAppearanceMode)
+                            put("botTypingSpeedMs", currentSettings.botTypingSpeedMs)
+                            put("textingModeDelayPreset", currentSettings.textingModeDelayPreset)
+                            put("textingModeCustomSeconds", currentSettings.textingModeCustomSeconds)
+                            put("showTypingIndicator", currentSettings.showTypingIndicator)
+                            put("showTextingModeSystemMessages", currentSettings.showTextingModeSystemMessages)
+                            put("globalDefaultNsfw", currentSettings.globalDefaultNsfw)
+                            put("geminiSafetyThreshold", currentSettings.geminiSafetyThreshold)
+
+                            // 10. System Prompts & Memory
+                            put("customSystemPrompt", currentSettings.customSystemPrompt)
+                            put("systemPromptVersion", currentSettings.systemPromptVersion)
+                            put("downloadedSystemPrompt", currentSettings.downloadedSystemPrompt)
+                            put("isSystemPromptUserModified", currentSettings.isSystemPromptUserModified)
+                            put("isSystemPromptFirstLaunchDone", currentSettings.isSystemPromptFirstLaunchDone)
+                            put("openRouterFallbackModels", currentSettings.openRouterFallbackModels)
+                            put("autoMemoryInterval", currentSettings.autoMemoryInterval)
+                            put("autoChronicleInterval", currentSettings.autoChronicleInterval)
+
+                            // 11. Custom Chat Folders & Relationships
+                            put("customChatFoldersJson", currentSettings.customChatFoldersJson)
+                            put("customRelationshipTypesJson", currentSettings.customRelationshipTypesJson)
+                            put("relationshipViewMode", currentSettings.relationshipViewMode)
+
+                            // 12. Verity & Skibidi Easter Eggs
+                            put("verityUnlocked", currentSettings.verityUnlocked)
+                            put("showVerityInHotbar", currentSettings.showVerityInHotbar)
+                            put("verityFormScore", currentSettings.verityFormScore)
+                            put("veritySatiety", currentSettings.veritySatiety)
+                            put("verityEnergy", currentSettings.verityEnergy)
+                            put("verityMood", currentSettings.verityMood)
+                            put("verityMuscleMass", currentSettings.verityMuscleMass)
+                            put("verityFatMass", currentSettings.verityFatMass)
+                            put("verityTotalActions", currentSettings.verityTotalActions)
+                            put("skibidiUnlocked", currentSettings.skibidiUnlocked)
+                            put("easterEggCode", currentSettings.easterEggCode)
+                            put("lastSeenWhatsNewVersion", currentSettings.lastSeenWhatsNewVersion)
                         })
                     }
 
@@ -601,6 +681,12 @@ class BackupRepository(private val context: Context, private val db: AppDatabase
                 for (ch in existingChats) db.chatDao().deleteChatById(ch.id)
                 val existingChars = db.characterDao().getAllCharacters().first()
                 for (c in existingChars) db.characterDao().deleteCharacterById(c.id)
+                val existingPersonas = db.userPersonaDao().getAllPersonasList()
+                for (p in existingPersonas) db.userPersonaDao().deletePersona(p)
+                val existingStories = db.storyDao().getAllStoriesList()
+                for (s in existingStories) db.storyDao().deleteStory(s)
+                val existingProviders = db.aiProviderDao().getAllProfiles().first()
+                for (pr in existingProviders) db.aiProviderDao().deleteProfile(pr)
             }
 
             // Map old IDs to new IDs
@@ -823,8 +909,21 @@ class BackupRepository(private val context: Context, private val db: AppDatabase
                 val currentSettings = userPrefs.userSettingsFlow.first()
 
                 val updatedSettings = currentSettings.copy(
+                    // 1. Theme & Appearance
                     themeMode = settingsObj.optString("themeMode", currentSettings.themeMode),
                     accentColorLong = settingsObj.optLong("accentColorLong", currentSettings.accentColorLong),
+                    appIconVariant = settingsObj.optString("appIconVariant", currentSettings.appIconVariant),
+                    fontFamilyChoice = settingsObj.optString("fontFamilyChoice", currentSettings.fontFamilyChoice),
+                    customFontPath = resolveImportedUri(settingsObj.optString("customFontPath", currentSettings.customFontPath)),
+                    customFontName = settingsObj.optString("customFontName", currentSettings.customFontName),
+                    uiVariant = settingsObj.optString("uiVariant", currentSettings.uiVariant),
+                    vaultHubStartTab = settingsObj.optString("vaultHubStartTab", currentSettings.vaultHubStartTab),
+                    controlStyle = settingsObj.optString("controlStyle", currentSettings.controlStyle),
+
+                    // 2. Language & Localization
+                    appLanguage = settingsObj.optString("appLanguage", currentSettings.appLanguage),
+
+                    // 3. Wallpapers & Live Video
                     chatWallpaperPreset = settingsObj.optString("chatWallpaperPreset", currentSettings.chatWallpaperPreset),
                     customWallpaperUri = resolveImportedUri(settingsObj.optString("customWallpaperUri", currentSettings.customWallpaperUri)),
                     customWallpapersJson = resolveImportedUriArray(settingsObj.optString("customWallpapersJson", currentSettings.customWallpapersJson)),
@@ -833,27 +932,95 @@ class BackupRepository(private val context: Context, private val db: AppDatabase
                     appThemeBackgroundPreset = settingsObj.optString("appThemeBackgroundPreset", currentSettings.appThemeBackgroundPreset),
                     appCustomBackgroundUri = resolveImportedUri(settingsObj.optString("appCustomBackgroundUri", currentSettings.appCustomBackgroundUri)),
                     appCustomBackgroundAlpha = settingsObj.optDouble("appCustomBackgroundAlpha", currentSettings.appCustomBackgroundAlpha.toDouble()).toFloat(),
+                    parallaxEnabled = settingsObj.optBoolean("parallaxEnabled", currentSettings.parallaxEnabled),
+                    chatWallpaperAlpha = settingsObj.optDouble("chatWallpaperAlpha", currentSettings.chatWallpaperAlpha.toDouble()).toFloat(),
+                    wallpaperTone = settingsObj.optString("wallpaperTone", currentSettings.wallpaperTone),
+
+                    // 4. Frames & Glassmorphism
                     userActiveFrameUri = resolveImportedUri(settingsObj.optString("userActiveFrameUri", currentSettings.userActiveFrameUri)),
                     userFramesJson = resolveImportedUriArray(settingsObj.optString("userFramesJson", currentSettings.userFramesJson)),
-                    customFontPath = resolveImportedUri(settingsObj.optString("customFontPath", currentSettings.customFontPath)),
-                    customFontName = settingsObj.optString("customFontName", currentSettings.customFontName),
+                    frameParallaxEnabled = settingsObj.optBoolean("frameParallaxEnabled", currentSettings.frameParallaxEnabled),
+                    frameParallaxSensitivity = settingsObj.optDouble("frameParallaxSensitivity", currentSettings.frameParallaxSensitivity.toDouble()).toFloat(),
+                    frameParallaxMaxOffset = settingsObj.optDouble("frameParallaxMaxOffset", currentSettings.frameParallaxMaxOffset.toDouble()).toFloat(),
                     glassmorphismEnabled = settingsObj.optBoolean("glassmorphismEnabled", currentSettings.glassmorphismEnabled),
-                    wallpaperTone = settingsObj.optString("wallpaperTone", currentSettings.wallpaperTone),
                     glassAlpha = settingsObj.optDouble("glassAlpha", currentSettings.glassAlpha.toDouble()).toFloat(),
                     glassBlurRadius = settingsObj.optDouble("glassBlurRadius", currentSettings.glassBlurRadius.toDouble()).toFloat(),
                     glassBorderGlow = settingsObj.optBoolean("glassBorderGlow", currentSettings.glassBorderGlow),
                     glassSpecularIntensity = settingsObj.optDouble("glassSpecularIntensity", currentSettings.glassSpecularIntensity.toDouble()).toFloat(),
-                    frameParallaxEnabled = settingsObj.optBoolean("frameParallaxEnabled", currentSettings.frameParallaxEnabled),
-                    frameParallaxSensitivity = settingsObj.optDouble("frameParallaxSensitivity", currentSettings.frameParallaxSensitivity.toDouble()).toFloat(),
-                    frameParallaxMaxOffset = settingsObj.optDouble("frameParallaxMaxOffset", currentSettings.frameParallaxMaxOffset.toDouble()).toFloat(),
+
+                    // 5. Adaptive Accent Tinting
+                    accentTintIntensity = settingsObj.optDouble("accentTintIntensity", currentSettings.accentTintIntensity.toDouble()).toFloat(),
+
+                    // 6. Pets (Boykisser & Pochita)
+                    boykisserPetEnabled = settingsObj.optBoolean("boykisserPetEnabled", currentSettings.boykisserPetEnabled),
+                    boykisserPetVariant = settingsObj.optString("boykisserPetVariant", currentSettings.boykisserPetVariant),
+                    boykisserPetSpeed = settingsObj.optDouble("boykisserPetSpeed", currentSettings.boykisserPetSpeed.toDouble()).toFloat(),
+                    boykisserMainBehavior = settingsObj.optString("boykisserMainBehavior", currentSettings.boykisserMainBehavior),
+                    boykisserChatBehavior = settingsObj.optString("boykisserChatBehavior", currentSettings.boykisserChatBehavior),
+                    selectedPetsJson = settingsObj.optString("selectedPetsJson", currentSettings.selectedPetsJson),
+                    appIconStyle = settingsObj.optString("appIconStyle", currentSettings.appIconStyle),
+
+                    // 7. Chat Style & Novel Dividers
                     fontSizeSp = settingsObj.optInt("fontSizeSp", currentSettings.fontSizeSp),
                     bubbleStyle = settingsObj.optString("bubbleStyle", currentSettings.bubbleStyle),
+                    showAvatarInChat = settingsObj.optBoolean("showAvatarInChat", currentSettings.showAvatarInChat),
                     novelDividerEnabled = settingsObj.optBoolean("novelDividerEnabled", currentSettings.novelDividerEnabled),
                     novelDividerWidthPercent = settingsObj.optInt("novelDividerWidthPercent", currentSettings.novelDividerWidthPercent),
                     novelDividerThicknessDp = settingsObj.optInt("novelDividerThicknessDp", currentSettings.novelDividerThicknessDp),
                     novelDividerAlpha = settingsObj.optDouble("novelDividerAlpha", currentSettings.novelDividerAlpha.toDouble()).toFloat(),
                     novelDividerColorHex = settingsObj.optString("novelDividerColorHex", currentSettings.novelDividerColorHex),
-                    novelTextAlignment = settingsObj.optString("novelTextAlignment", currentSettings.novelTextAlignment)
+                    novelTextAlignment = settingsObj.optString("novelTextAlignment", currentSettings.novelTextAlignment),
+
+                    // 8. Animations
+                    tabSwitchAnimation = settingsObj.optString("tabSwitchAnimation", currentSettings.tabSwitchAnimation),
+                    tabSwitchDurationMs = settingsObj.optInt("tabSwitchDurationMs", currentSettings.tabSwitchDurationMs),
+                    chatScrollAnimation = settingsObj.optString("chatScrollAnimation", currentSettings.chatScrollAnimation),
+                    hotbarAnimation = settingsObj.optString("hotbarAnimation", currentSettings.hotbarAnimation),
+                    isHotbarVisible = settingsObj.optBoolean("isHotbarVisible", currentSettings.isHotbarVisible),
+                    animationPerformanceMode = settingsObj.optString("animationPerformanceMode", currentSettings.animationPerformanceMode),
+
+                    // 9. Behavior & Parameters
+                    defaultMaxTokens = settingsObj.optInt("defaultMaxTokens", currentSettings.defaultMaxTokens),
+                    contextWindowSize = settingsObj.optInt("contextWindowSize", currentSettings.contextWindowSize),
+                    customContextLimit = settingsObj.optInt("customContextLimit", currentSettings.customContextLimit),
+                    characterLimitMode = settingsObj.optString("characterLimitMode", currentSettings.characterLimitMode),
+                    botTextAppearanceMode = settingsObj.optString("botTextAppearanceMode", currentSettings.botTextAppearanceMode),
+                    botTypingSpeedMs = settingsObj.optInt("botTypingSpeedMs", currentSettings.botTypingSpeedMs),
+                    textingModeDelayPreset = settingsObj.optString("textingModeDelayPreset", currentSettings.textingModeDelayPreset),
+                    textingModeCustomSeconds = settingsObj.optInt("textingModeCustomSeconds", currentSettings.textingModeCustomSeconds),
+                    showTypingIndicator = settingsObj.optBoolean("showTypingIndicator", currentSettings.showTypingIndicator),
+                    showTextingModeSystemMessages = settingsObj.optBoolean("showTextingModeSystemMessages", currentSettings.showTextingModeSystemMessages),
+                    globalDefaultNsfw = settingsObj.optBoolean("globalDefaultNsfw", currentSettings.globalDefaultNsfw),
+                    geminiSafetyThreshold = settingsObj.optString("geminiSafetyThreshold", currentSettings.geminiSafetyThreshold),
+
+                    // 10. System Prompts & Memory
+                    customSystemPrompt = settingsObj.optString("customSystemPrompt", currentSettings.customSystemPrompt),
+                    systemPromptVersion = settingsObj.optString("systemPromptVersion", currentSettings.systemPromptVersion),
+                    downloadedSystemPrompt = settingsObj.optString("downloadedSystemPrompt", currentSettings.downloadedSystemPrompt),
+                    isSystemPromptUserModified = settingsObj.optBoolean("isSystemPromptUserModified", currentSettings.isSystemPromptUserModified),
+                    isSystemPromptFirstLaunchDone = settingsObj.optBoolean("isSystemPromptFirstLaunchDone", currentSettings.isSystemPromptFirstLaunchDone),
+                    openRouterFallbackModels = settingsObj.optString("openRouterFallbackModels", currentSettings.openRouterFallbackModels),
+                    autoMemoryInterval = settingsObj.optInt("autoMemoryInterval", currentSettings.autoMemoryInterval),
+                    autoChronicleInterval = settingsObj.optInt("autoChronicleInterval", currentSettings.autoChronicleInterval),
+
+                    // 11. Custom Chat Folders & Relationships
+                    customChatFoldersJson = settingsObj.optString("customChatFoldersJson", currentSettings.customChatFoldersJson),
+                    customRelationshipTypesJson = settingsObj.optString("customRelationshipTypesJson", currentSettings.customRelationshipTypesJson),
+                    relationshipViewMode = settingsObj.optString("relationshipViewMode", currentSettings.relationshipViewMode),
+
+                    // 12. Verity & Skibidi Easter Eggs
+                    verityUnlocked = settingsObj.optBoolean("verityUnlocked", currentSettings.verityUnlocked),
+                    showVerityInHotbar = settingsObj.optBoolean("showVerityInHotbar", currentSettings.showVerityInHotbar),
+                    verityFormScore = settingsObj.optInt("verityFormScore", currentSettings.verityFormScore),
+                    veritySatiety = settingsObj.optInt("veritySatiety", currentSettings.veritySatiety),
+                    verityEnergy = settingsObj.optInt("verityEnergy", currentSettings.verityEnergy),
+                    verityMood = settingsObj.optInt("verityMood", currentSettings.verityMood),
+                    verityMuscleMass = settingsObj.optInt("verityMuscleMass", currentSettings.verityMuscleMass),
+                    verityFatMass = settingsObj.optInt("verityFatMass", currentSettings.verityFatMass),
+                    verityTotalActions = settingsObj.optInt("verityTotalActions", currentSettings.verityTotalActions),
+                    skibidiUnlocked = settingsObj.optBoolean("skibidiUnlocked", currentSettings.skibidiUnlocked),
+                    easterEggCode = settingsObj.optString("easterEggCode", currentSettings.easterEggCode),
+                    lastSeenWhatsNewVersion = settingsObj.optString("lastSeenWhatsNewVersion", currentSettings.lastSeenWhatsNewVersion)
                 )
                 userPrefs.updateSettings(updatedSettings)
             }

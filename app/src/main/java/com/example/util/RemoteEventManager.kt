@@ -10,6 +10,7 @@ import java.net.URL
 data class RemoteEventInfo(
     val eventName: String?,
     val isHalloween: Boolean,
+    val isNewYear: Boolean = false,
     val rawJson: String = ""
 )
 
@@ -58,11 +59,13 @@ object RemoteEventManager {
                     val eventVal = match?.groupValues?.get(1)?.trim()?.lowercase()
 
                     val isHalloween = eventVal == "halloween"
+                    val isNewYear = eventVal == "newyear" || eventVal == "new_year"
 
                     return@withContext Result.success(
                         RemoteEventInfo(
                             eventName = eventVal,
                             isHalloween = isHalloween,
+                            isNewYear = isNewYear,
                             rawJson = raw
                         )
                     )

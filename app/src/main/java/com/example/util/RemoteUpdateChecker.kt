@@ -21,7 +21,7 @@ data class AppUpdateManifest(
 
 object RemoteUpdateChecker {
 
-    const val CURRENT_APP_VERSION = "1.0.0"
+    const val CURRENT_APP_VERSION = "1.1.0"
     val UPDATE_URLS = listOf(
         "https://raw.githubusercontent.com/yoayammmDEV/box-of-untitledAI/main/info.json",
         "https://github.com/yoayammmDEV/box-of-untitledAI/raw/main/info.json",

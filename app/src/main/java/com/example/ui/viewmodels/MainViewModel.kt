@@ -163,6 +163,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val remoteEventInfo: StateFlow<com.example.util.RemoteEventInfo?> = _remoteEventInfo.asStateFlow()
     val isHalloweenEventActive: StateFlow<Boolean> = _remoteEventInfo.map { it?.isHalloween == true }
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    val isNewYearEventActive: StateFlow<Boolean> = _remoteEventInfo.map { it?.isNewYear == true }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     fun checkRemoteEvent(manual: Boolean = false, onResult: ((Boolean, String) -> Unit)? = null) {
         viewModelScope.launch {
@@ -172,6 +174,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _remoteEventInfo.value = info
                 if (info != null && info.isHalloween) {
                     onResult?.invoke(true, "🎃 Активно событие: Halloween!")
+                } else if (info != null && info.isNewYear) {
+                    onResult?.invoke(true, "❄️ Активно событие: Новый Год!")
                 } else {
                     if (manual) {
                         onResult?.invoke(false, "События в info.json не обнаружено (${info?.eventName ?: "нет"}).")
@@ -277,10 +281,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     } catch (_: Exception) {}
                 }
 
-                // Stage 3: Pre-connect to GitHub Repository, sync system prompt, events, and Store catalog
-                _startupStatusText.value = "Подключение к репозиторию GitHub и синхронизация..."
+                // Stage 3: Pre-connect to GitHub Repository, sync bots catalog, pets, prompt, and events
+                _startupStatusText.value = "Синхронизация репозитория GitHub (каталог и питомцы)..."
                 _startupProgress.value = 0.48f
-                kotlinx.coroutines.withTimeoutOrNull(1800L) {
+                kotlinx.coroutines.withTimeoutOrNull(4500L) {
                     val repoJob = async { checkInternetAndRepoConnection() }
                     val promptJob = async { syncSystemPromptOnLaunch() }
                     val eventJob = async { checkRemoteEvent(manual = false) }
@@ -295,11 +299,38 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             }
                         } catch (_: Exception) {}
                     }
+                    val petsJob = async {
+                        try {
+                            val cat = com.example.util.PetManager.fetchPetCatalog()
+                            if (cat.pets.isNotEmpty()) {
+                                val appContext = getApplication<Application>()
+                                cat.pets.forEach { pet ->
+                                    if (pet.imageUrl.isNotBlank()) {
+                                        com.example.ui.components.prewarmAvatarInMemory(appContext, pet.imageUrl, 160)
+                                    }
+                                }
+                            }
+                        } catch (_: Exception) {}
+                    }
+                    val emojiJob = async {
+                        try {
+                            val currentSettings = preferencesRepository.userSettingsFlow.first()
+                            val packId = currentSettings.iconPack
+                            if (com.example.ui.components.EmojiPackManager.AVAILABLE_PACKS.any { it.id == packId && it.supportsDownload }) {
+                                val appContext = getApplication<Application>()
+                                if (!com.example.ui.components.EmojiPackManager.isPackDownloaded(appContext, packId)) {
+                                    com.example.ui.components.EmojiPackManager.downloadPack(appContext, packId)
+                                }
+                            }
+                        } catch (_: Exception) {}
+                    }
                     repoJob.await()
                     promptJob.await()
                     eventJob.await()
                     updateJob.await()
                     storeJob.await()
+                    petsJob.await()
+                    emojiJob.await()
                 }
 
                 // Stage 4: Pre-compose Tab 0 (Characters) & Tab 1 (Chats)
@@ -933,6 +964,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     isError = hasError,
                     notificationsEnabled = settings.backgroundNotificationsEnabled
                 )
+                if (generatedText != null && !hasError) {
+                    com.example.util.PluginManager.dispatchMessageReceived(charName, generatedText)
+                }
                 _generatingChatIds.update { it - chatId }
                 onAiStateChange(false)
             }
@@ -1213,6 +1247,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun updateChatNotes(chatId: Long, notes: String) {
         viewModelScope.launch {
             roleplayRepository.updateChatNotes(chatId, notes)
+        }
+    }
+
+    fun appendChatNotes(chatId: Long, noteToAdd: String) {
+        viewModelScope.launch {
+            val currentChat = roleplayRepository.getChatById(chatId) ?: return@launch
+            val cleanNote = noteToAdd.trim()
+            if (cleanNote.isBlank()) return@launch
+            val newNotes = if (currentChat.notes.isBlank()) {
+                cleanNote
+            } else {
+                "${currentChat.notes.trim()}\n- $cleanNote"
+            }
+            roleplayRepository.updateChatNotes(chatId, newNotes)
         }
     }
 
@@ -1500,12 +1548,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         userWishes: String,
         chatIdForLog: Long? = null,
         saveToDatabase: Boolean = false,
+        preferredProfileId: Long? = null,
         onSuccess: (com.example.ai.engine.GeneratedBotDraft, CharacterEntity?) -> Unit,
         onError: (String) -> Unit
     ) {
         viewModelScope.launch {
             try {
-                val profile = resolveActiveTextProfile()
+                val profile = (preferredProfileId?.let { id -> providerProfiles.value.find { it.id == id } })
+                    ?: resolveActiveTextProfile()
                     ?: return@launch onError("Не настроен текстовый ИИ-провайдер. Добавьте ключ в разделе Провайдеры.")
 
                 if (chatIdForLog != null && chatIdForLog > 0L) {
@@ -1528,7 +1578,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     systemPrompt = systemPrompt,
                     recentMessages = listOf(reqMsg),
                     openRouterFallbackModels = settings.openRouterFallbackModels,
-                    geminiSafetyThreshold = settings.geminiSafetyThreshold
+                    geminiSafetyThreshold = settings.geminiSafetyThreshold,
+                    overrideMaxTokens = 4000
                 )
 
                 if (aiResult.isFailure) {
@@ -1580,12 +1631,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun assistBotInEditor(
         promptPayload: String,
+        preferredProfileId: Long? = null,
         onSuccess: (com.example.ai.engine.GeneratedBotDraft) -> Unit,
         onError: (String) -> Unit
     ) {
         viewModelScope.launch {
             try {
-                val profile = resolveActiveTextProfile()
+                val profile = (preferredProfileId?.let { id -> providerProfiles.value.find { it.id == id } })
+                    ?: resolveActiveTextProfile()
                     ?: return@launch onError("Не настроен текстовый ИИ-провайдер. Проверьте раздел Провайдеры.")
 
                 val settings = userSettings.value
@@ -1601,7 +1654,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     systemPrompt = systemPrompt,
                     recentMessages = listOf(reqMsg),
                     openRouterFallbackModels = settings.openRouterFallbackModels,
-                    geminiSafetyThreshold = settings.geminiSafetyThreshold
+                    geminiSafetyThreshold = settings.geminiSafetyThreshold,
+                    overrideMaxTokens = 4000
                 )
 
                 if (aiResult.isFailure) {
@@ -1624,12 +1678,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun generatePersonaFromPrompt(
         userWishes: String,
         chatIdForLog: Long? = null,
+        preferredProfileId: Long? = null,
         onSuccess: (com.example.ai.engine.GeneratedPersonaDraft, UserPersonaEntity) -> Unit,
         onError: (String) -> Unit
     ) {
         viewModelScope.launch {
             try {
-                val profile = resolveActiveTextProfile()
+                val profile = (preferredProfileId?.let { id -> providerProfiles.value.find { it.id == id } })
+                    ?: resolveActiveTextProfile()
                     ?: return@launch onError("Не настроен текстовый ИИ-провайдер. Добавьте ключ в разделе Провайдеры.")
 
                 if (chatIdForLog != null && chatIdForLog > 0L) {
@@ -1652,7 +1708,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     systemPrompt = systemPrompt,
                     recentMessages = listOf(reqMsg),
                     openRouterFallbackModels = settings.openRouterFallbackModels,
-                    geminiSafetyThreshold = settings.geminiSafetyThreshold
+                    geminiSafetyThreshold = settings.geminiSafetyThreshold,
+                    overrideMaxTokens = 3500
                 )
 
                 if (aiResult.isFailure) {
@@ -1714,4 +1771,309 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun importBackup(uri: Uri, replaceAll: Boolean): Result<Unit> {
         return backupRepository.importBackup(uri, replaceAll)
     }
+
+    fun archiveAndCreateCompressedChat(chatId: Long, characterId: Long, onCreated: (Long) -> Unit) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val sourceChat = db.chatDao().getChatById(chatId) ?: return@launch
+                val character = db.characterDao().getCharacterById(characterId)
+                val textProfile = resolveActiveTextProfile() ?: db.aiProviderDao().getDefaultTextProfile()
+
+                // 1. Fetch past chat messages and existing memories of the old chat
+                val messages = db.messageDao().getMessagesListForChat(chatId)
+                val existingSummaries = db.summaryDao().getSummariesUpToTimestamp(chatId, Long.MAX_VALUE)
+                val latestSummaryBefore = existingSummaries.lastOrNull()
+                var latestRel = db.relationshipDao().getLatestRelationshipTable(chatId)
+
+                val initialPlot = character?.greetingMessage?.ifBlank {
+                    messages.firstOrNull { it.sender != "user" }?.content ?: ""
+                } ?: ""
+
+                // 2. Identify unsummarized tail messages in the old chat
+                val unsummarizedMessages = if (latestSummaryBefore != null) {
+                    messages.filter { it.timestamp > latestSummaryBefore.timestamp && !it.content.startsWith("📖") && it.content.isNotBlank() }
+                } else {
+                    messages.filter { !it.content.startsWith("📖") && it.content.isNotBlank() }
+                }
+
+                fun extractCleanJson(text: String): String {
+                    val firstBrace = text.indexOf('{')
+                    val lastBrace = text.lastIndexOf('}')
+                    if (firstBrace != -1 && lastBrace != -1 && lastBrace > firstBrace) {
+                        return text.substring(firstBrace, lastBrace + 1)
+                    }
+                    return text
+                }
+
+                // If there are unsummarized messages in the old chat (with user activity), summarize them and save to old chat first!
+                val hasUserTurn = unsummarizedMessages.any { it.sender == "user" }
+                if (unsummarizedMessages.isNotEmpty() && hasUserTurn) {
+                    val messagesForTail = if (unsummarizedMessages.size <= 40) {
+                        unsummarizedMessages
+                    } else {
+                        unsummarizedMessages.takeLast(40)
+                    }
+
+                    val tailText = messagesForTail.joinToString("\n") {
+                        "${if (it.sender == "user") "Пользователь" else character?.name ?: "Бот"}: ${it.content}"
+                    }
+
+                    val currentBoard = try {
+                        com.example.util.RelationshipBoardHelper.parseBoard(
+                            json = latestRel?.boardJson?.takeIf { it.isNotBlank() } ?: character?.relationshipBoardJson ?: "",
+                            mainCharName = character?.name ?: "Персонаж",
+                            playerName = "Игрок",
+                            startingRelationship = sourceChat.relationshipType.ifBlank { character?.startingRelationship ?: "strangers" },
+                            customRelationship = sourceChat.customRelationship.ifBlank { character?.customRelationship ?: "" },
+                            initialTitle = character?.initialRelationshipTitle ?: "",
+                            initialPercent = if (character?.initialRelationshipPercent != -1) character?.initialRelationshipPercent ?: -999 else -999
+                        )
+                    } catch (_: Exception) {
+                        com.example.util.RelationshipBoardState(emptyList(), emptyList())
+                    }
+
+                    val tailSummaryPrompt = com.example.ai.engine.RoleplayPromptBuilder.buildSummaryPrompt(
+                        characterName = character?.name ?: "Персонаж",
+                        initialPlot = initialPlot,
+                        previousSummary = latestSummaryBefore?.summaryText,
+                        messagesText = tailText,
+                        currentBoard = currentBoard
+                    )
+
+                    val dummyTailMsg = MessageEntity(
+                        chatId = chatId,
+                        sender = "user",
+                        content = tailSummaryPrompt,
+                        timestamp = System.currentTimeMillis()
+                    )
+
+                    val tailAiResult = if (textProfile != null) {
+                        com.example.ai.engine.AiProviderEngine.generateChatCompletion(
+                            profile = textProfile,
+                            systemPrompt = "Ты модуль аналитики и памяти ролплея. Составь связное и подробное саммари недавних событий. Отвечай СТРОГО в формате JSON.",
+                            recentMessages = listOf(dummyTailMsg)
+                        )
+                    } else null
+
+                    val tailResponseText = tailAiResult?.getOrNull() ?: ""
+                    var tailSummaryStr = ""
+
+                    val cleanTailJson = extractCleanJson(tailResponseText)
+                    if (cleanTailJson.isNotBlank()) {
+                        try {
+                            val jsonObj = org.json.JSONObject(cleanTailJson)
+                            tailSummaryStr = jsonObj.optString("summary", "").trim()
+                            val relObj = jsonObj.optJSONObject("relationship")
+                            if (relObj != null) {
+                                val rawStatus = relObj.optString("status", "Знакомые")
+                                val rawTrustScore = relObj.optInt("trustScore", 0).coerceIn(-100, 100)
+                                val mood = relObj.optString("mood", "Спокойное")
+                                val keyEventsArr = relObj.optJSONArray("keyEvents") ?: org.json.JSONArray()
+                                val openPlotsArr = relObj.optJSONArray("openPlotThreads") ?: org.json.JSONArray()
+                                val boardEdgesArr = relObj.optJSONArray("boardEdges")
+
+                                val firstEventNote = if (keyEventsArr.length() > 0) keyEventsArr.optString(0, "") else ""
+                                val updatedBoard = com.example.util.RelationshipBoardHelper.applyAiUpdatesToBoard(
+                                    currentBoard = currentBoard,
+                                    aiEdgesArray = boardEdgesArr,
+                                    fallbackMainToPlayerStatus = rawStatus,
+                                    fallbackMainToPlayerScore = rawTrustScore,
+                                    fallbackDescription = firstEventNote
+                                )
+
+                                val finalAvgScore = if (updatedBoard.edges.isNotEmpty()) {
+                                    updatedBoard.calculateAverageScore()
+                                } else {
+                                    rawTrustScore
+                                }
+                                val finalStatus = if (rawStatus.isNotBlank()) rawStatus else updatedBoard.calculateOverallTitle("Знакомые")
+
+                                val updatedRelEntity = RelationshipTableEntity(
+                                    chatId = chatId,
+                                    status = finalStatus,
+                                    trustScore = finalAvgScore,
+                                    mood = mood,
+                                    keyEvents = keyEventsArr.toString(),
+                                    openPlotThreads = openPlotsArr.toString(),
+                                    boardJson = updatedBoard.toJson(),
+                                    timestamp = System.currentTimeMillis()
+                                )
+                                db.relationshipDao().insertRelationshipTable(updatedRelEntity)
+                                latestRel = updatedRelEntity
+                            }
+                        } catch (_: Exception) {}
+                    }
+
+                    // Fallback for tail if AI returned nothing
+                    if (tailSummaryStr.isBlank()) {
+                        tailSummaryStr = buildString {
+                            append("Финальные события перед архивацией:\n")
+                            messagesForTail.takeLast(4).forEach { m ->
+                                val author = if (m.sender == "user") "Игрок" else (character?.name ?: "Персонаж")
+                                append("- $author: ${m.content.take(120)}\n")
+                            }
+                        }
+                    }
+
+                    // Save the tail summary into the OLD chat so the old chat is complete up to the very end
+                    db.summaryDao().insertSummary(
+                        SummaryEntity(
+                            chatId = chatId,
+                            messageRange = "final_tail_${messages.size}",
+                            summaryText = tailSummaryStr,
+                            timestamp = System.currentTimeMillis()
+                        )
+                    )
+                }
+
+                // 3. Now collect ALL summaries from the old chat (including the final tail summary just created)
+                val allOldSummaries = db.summaryDao().getSummariesUpToTimestamp(chatId, Long.MAX_VALUE)
+                    .map { it.summaryText.trim() }
+                    .filter { it.isNotBlank() }
+
+                // 4. Combine all summaries into a single master chronicle text
+                var masterSummary = when {
+                    allOldSummaries.isEmpty() -> {
+                        if (initialPlot.isNotBlank()) "Предыстория: $initialPlot" else "Прошлый сюжет успешно сохранен в архиве."
+                    }
+                    allOldSummaries.size == 1 -> {
+                        allOldSummaries.first()
+                    }
+                    else -> {
+                        // If there are multiple summaries across time, synthesize them into one cohesive master chronicle
+                        val mergePrompt = """
+                            Ты летописец и архивариус ролплея.
+                            Перед тобой хронологические этапы развития сюжета между игроком и персонажем "${character?.name ?: "Персонаж"}".
+                            Твоя задача — объединить эти этапы в единую связную, последовательную и подробную летопись событий (хронику), исключив повторы и сохранив все ключевые события, решения, повороты сюжета и динамику отношений от начала до текущего момента.
+                            ${if (initialPlot.isNotBlank()) "Исходная завязка сюжета: $initialPlot\n" else ""}
+                            Хронологические этапы:
+                            ${allOldSummaries.mapIndexed { i, s -> "--- ЭТАП ${i + 1} ---\n$s" }.joinToString("\n\n")}
+                            
+                            Напиши связный литературный рассказ/летопись (без служебных префиксов, Markdown-разметка приветствуется).
+                        """.trimIndent()
+
+                        val dummyMergeMsg = MessageEntity(
+                            chatId = chatId,
+                            sender = "user",
+                            content = mergePrompt,
+                            timestamp = System.currentTimeMillis()
+                        )
+
+                        val mergeAiResult = if (textProfile != null) {
+                            com.example.ai.engine.AiProviderEngine.generateChatCompletion(
+                                profile = textProfile,
+                                systemPrompt = "Ты летописец ролплея. Составь подробную и цельную хронику всех событий.",
+                                recentMessages = listOf(dummyMergeMsg)
+                            )
+                        } else null
+
+                        val mergedText = mergeAiResult?.getOrNull()?.trim() ?: ""
+                        if (mergedText.isNotBlank() && !mergedText.startsWith("Ошибка") && !mergedText.startsWith("Не удалось")) {
+                            mergedText
+                        } else {
+                            // Fallback: structured concatenation by parts
+                            allOldSummaries.mapIndexed { idx, s ->
+                                "• **Часть ${idx + 1}:**\n$s"
+                            }.joinToString("\n\n")
+                        }
+                    }
+                }
+
+                // 5. Create new chat preserving all settings, persona, notes and relationship type
+                val chapterRegex = Regex("""\(Глава (\d+)\)""")
+                val match = chapterRegex.find(sourceChat.title)
+                val nextChapterNum = (match?.groupValues?.get(1)?.toIntOrNull() ?: 1) + 1
+                val baseTitle = sourceChat.title.replace(Regex("""\s*\(Глава \d+\)|\s*\(Новая глава\)"""), "").trim()
+
+                val newChat = sourceChat.copy(
+                    id = 0L,
+                    title = "$baseTitle (Глава $nextChapterNum)",
+                    createdAt = System.currentTimeMillis(),
+                    updatedAt = System.currentTimeMillis(),
+                    isArchived = false,
+                    isPinned = false,
+                    personaId = sourceChat.personaId,
+                    notes = sourceChat.notes,
+                    relationshipType = sourceChat.relationshipType,
+                    customRelationship = sourceChat.customRelationship,
+                    formalityDistance = sourceChat.formalityDistance,
+                    isNsfwEnabled = sourceChat.isNsfwEnabled,
+                    isTextingMode = sourceChat.isTextingMode,
+                    roleplayMode = sourceChat.roleplayMode,
+                    responseLength = sourceChat.responseLength,
+                    atmosphere = sourceChat.atmosphere,
+                    providerProfileId = sourceChat.providerProfileId
+                )
+                val newChatId = db.chatDao().insertChat(newChat)
+
+                // 6. CRITICAL: Save unified master summary into summaries table for new chat so system prompt reads it
+                db.summaryDao().insertSummary(
+                    SummaryEntity(
+                        chatId = newChatId,
+                        messageRange = "archived_from_$chatId",
+                        summaryText = masterSummary,
+                        timestamp = System.currentTimeMillis()
+                    )
+                )
+
+                // 7. Transfer relationship table into new chat
+                val targetRel = if (latestRel != null) {
+                    latestRel.copy(
+                        id = 0L,
+                        chatId = newChatId,
+                        timestamp = System.currentTimeMillis()
+                    )
+                } else {
+                    RelationshipTableEntity(
+                        chatId = newChatId,
+                        status = character?.getEffectiveInitialRelTitle() ?: "Знакомые",
+                        trustScore = character?.getEffectiveInitialRelPercent() ?: 0,
+                        mood = "Любопытство",
+                        keyEvents = "[]",
+                        boardJson = character?.relationshipBoardJson ?: "",
+                        timestamp = System.currentTimeMillis()
+                    )
+                }
+                db.relationshipDao().insertRelationshipTable(targetRel)
+
+                // 8. Insert master story summary as first system message
+                val chronicleMsg = MessageEntity(
+                    chatId = newChatId,
+                    sender = "character",
+                    content = "📖 **Летопись прошлых событий:**\n\n$masterSummary\n\n---\n*✨ Предыдущий диалог сохранен в Архиве. Ваши отношения, заметки и память перенесены в эту новую главу.*",
+                    timestamp = System.currentTimeMillis() - 10000L
+                )
+                db.messageDao().insertMessage(chronicleMsg)
+
+                // 9. Show the last message from the previous chat as the greeting message in the new chat
+                val lastCharMsg = messages.lastOrNull { it.sender != "user" && !it.content.startsWith("📖") && it.content.isNotBlank() }
+                val lastOldMsg = lastCharMsg ?: messages.lastOrNull { !it.content.startsWith("📖") && it.content.isNotBlank() }
+
+                val greetingContent = lastOldMsg?.content?.ifBlank { null }
+                    ?: character?.greetingMessage?.ifBlank { null }
+                    ?: "..."
+
+                val greetingSender = lastOldMsg?.sender ?: "character"
+                val greetingImage = lastOldMsg?.imageUrl ?: character?.greetingBannerUri?.ifBlank { null }
+
+                val greetingMsg = MessageEntity(
+                    chatId = newChatId,
+                    sender = greetingSender,
+                    content = greetingContent,
+                    imageUrl = greetingImage,
+                    variantsJson = lastOldMsg?.variantsJson,
+                    timestamp = System.currentTimeMillis() - 1000L
+                )
+                db.messageDao().insertMessage(greetingMsg)
+
+                // 10. Mark old chat as archived
+                db.chatDao().setChatArchived(chatId, true)
+
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    onCreated(newChatId)
+                }
+            } catch (_: Exception) {}
+        }
+    }
 }
+

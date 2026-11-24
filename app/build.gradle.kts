@@ -1,3 +1,4 @@
+import java.util.Properties
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
 
 plugins {
@@ -17,19 +18,39 @@ android {
     applicationId = "com.aistudio.airoleplay.kvyzrt"
     minSdk = 26
     targetSdk = 36
-    versionCode = 1
-    versionName = "1.0"
+    versionCode = 2
+    versionName = "1.1.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
 
+  val localProps = Properties().apply {
+    val localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+      localPropertiesFile.inputStream().use { stream ->
+        load(stream)
+      }
+    }
+  }
+
   signingConfigs {
     create("release") {
-      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
-      storeFile = file(keystorePath)
+      val keyFile = when {
+        file("${rootDir}/keyy.jks").exists() -> file("${rootDir}/keyy.jks")
+        localProps.getProperty("RELEASE_STORE_FILE") != null -> file(localProps.getProperty("RELEASE_STORE_FILE"))
+        System.getenv("KEYSTORE_PATH") != null -> file(System.getenv("KEYSTORE_PATH"))
+        else -> file("${rootDir}/my-upload-key.jks")
+      }
+      storeFile = keyFile
       storePassword = System.getenv("STORE_PASSWORD")
-      keyAlias = "upload"
+        ?: localProps.getProperty("RELEASE_STORE_PASSWORD")
+        ?: "enottip15"
+      keyAlias = System.getenv("KEY_ALIAS")
+        ?: localProps.getProperty("RELEASE_KEY_ALIAS")
+        ?: "key0"
       keyPassword = System.getenv("KEY_PASSWORD")
+        ?: localProps.getProperty("RELEASE_KEY_PASSWORD")
+        ?: "enottip15"
     }
     create("debugConfig") {
       storeFile = file("${rootDir}/debug.keystore")
@@ -44,7 +65,12 @@ android {
       isCrunchPngs = false
       isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      signingConfig = signingConfigs.getByName("release")
+      val relConfig = signingConfigs.getByName("release")
+      signingConfig = if (relConfig.storeFile?.exists() == true && !relConfig.storePassword.isNullOrBlank()) {
+        relConfig
+      } else {
+        signingConfigs.getByName("debugConfig")
+      }
     }
     debug { signingConfig = signingConfigs.getByName("debugConfig") }
   }
@@ -118,6 +144,7 @@ dependencies {
   implementation(libs.okhttp)
   // implementation(libs.play.services.location)
   implementation(libs.retrofit)
+  implementation("org.luaj:luaj-jse:3.0.1")
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)

@@ -144,7 +144,7 @@ fun ProvidersScreen(
                                     )
                                     isNewProfileDialog = true
                                 },
-                                label = { Text("✨ Google Gemini", fontWeight = FontWeight.Bold) },
+                                label = { com.example.ui.components.AdaptiveIconText("✨", "Google Gemini", textStyle = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), iconSize = 14.dp, spacing = 5.dp) },
                                 shape = RoundedCornerShape(8.dp)
                             )
                         }
@@ -152,7 +152,7 @@ fun ProvidersScreen(
                             FilterChip(
                                 selected = false,
                                 onClick = { showGeminiTutorial = true },
-                                label = { Text(if (isEn) "🎓 Tutorial: How to connect Gemini" else "🎓 Обучение: как подключить Gemini", fontWeight = FontWeight.Bold) },
+                                label = { com.example.ui.components.AdaptiveIconText("🎓", if (isEn) "Tutorial: How to connect Gemini" else "Обучение: как подключить Gemini", textStyle = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), iconSize = 14.dp, spacing = 5.dp) },
                                 colors = FilterChipDefaults.filterChipColors(
                                     containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
                                     labelColor = MaterialTheme.colorScheme.primary
@@ -174,7 +174,7 @@ fun ProvidersScreen(
                                     )
                                     isNewProfileDialog = true
                                 },
-                                label = { Text("🌐 OpenRouter", fontWeight = FontWeight.Bold) },
+                                label = { com.example.ui.components.AdaptiveIconText("🌐", "OpenRouter", textStyle = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), iconSize = 14.dp, spacing = 5.dp) },
                                 shape = RoundedCornerShape(8.dp)
                             )
                         }
@@ -191,7 +191,7 @@ fun ProvidersScreen(
                                     )
                                     isNewProfileDialog = true
                                 },
-                                label = { Text("🧠 xAI Grok", fontWeight = FontWeight.Bold) },
+                                label = { com.example.ui.components.AdaptiveIconText("🧠", "xAI Grok", textStyle = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), iconSize = 14.dp, spacing = 5.dp) },
                                 shape = RoundedCornerShape(8.dp)
                             )
                         }
@@ -208,7 +208,7 @@ fun ProvidersScreen(
                                     )
                                     isNewProfileDialog = true
                                 },
-                                label = { Text("⚡ Cerebras (120B)", fontWeight = FontWeight.Bold) },
+                                label = { com.example.ui.components.AdaptiveIconText("⚡", "Cerebras (120B)", textStyle = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), iconSize = 14.dp, spacing = 5.dp) },
                                 shape = RoundedCornerShape(8.dp)
                             )
                         }
@@ -225,7 +225,7 @@ fun ProvidersScreen(
                                     )
                                     isNewProfileDialog = true
                                 },
-                                label = { Text("⚡ Groq", fontWeight = FontWeight.Bold) },
+                                label = { com.example.ui.components.AdaptiveIconText("⚡", "Groq", textStyle = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), iconSize = 14.dp, spacing = 5.dp) },
                                 shape = RoundedCornerShape(8.dp)
                             )
                         }
@@ -242,7 +242,7 @@ fun ProvidersScreen(
                                     )
                                     isNewProfileDialog = true
                                 },
-                                label = { Text("⚡ SambaNova", fontWeight = FontWeight.Bold) },
+                                label = { com.example.ui.components.AdaptiveIconText("⚡", "SambaNova", textStyle = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), iconSize = 14.dp, spacing = 5.dp) },
                                 shape = RoundedCornerShape(8.dp)
                             )
                         }
@@ -259,7 +259,7 @@ fun ProvidersScreen(
                                     )
                                     isNewProfileDialog = true
                                 },
-                                label = { Text("🧠 DeepSeek", fontWeight = FontWeight.Bold) },
+                                label = { com.example.ui.components.AdaptiveIconText("🧠", "DeepSeek", textStyle = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), iconSize = 14.dp, spacing = 5.dp) },
                                 shape = RoundedCornerShape(8.dp)
                             )
                         }
@@ -278,7 +278,7 @@ fun ProvidersScreen(
                                     )
                                     isNewProfileDialog = true
                                 },
-                                label = { Text("🎨 Civitai", fontWeight = FontWeight.Bold) },
+                                label = { com.example.ui.components.AdaptiveIconText("🎨", "Civitai", textStyle = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), iconSize = 14.dp, spacing = 5.dp) },
                                 shape = RoundedCornerShape(8.dp)
                             )
                         }

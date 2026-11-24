@@ -40,6 +40,7 @@ import kotlin.math.roundToInt
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.foundation.BorderStroke
@@ -75,6 +76,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.flowOf
 import com.example.ui.components.PillNavigationHotbar
 import com.example.ui.components.HalloweenPumpkinRainOverlay
+import com.example.ui.components.SnowfallOverlay
 import com.example.ui.components.FrameParallaxController
 import com.example.ui.components.ParallaxChatWallpaper
 import com.example.ui.components.PreloadedAnimatedTabs
@@ -103,6 +105,9 @@ import com.example.data.local.entity.ComicEntity
 import com.example.ui.theme.AiRoleplayTheme
 import com.example.ui.viewmodels.MainViewModel
 import com.example.util.BackgroundGenerationManager
+import com.example.util.PluginManager
+import com.example.util.PluginOverlayHost
+import com.example.util.PluginUiHost
 import kotlinx.coroutines.flow.MutableStateFlow
 
 class MainActivity : ComponentActivity() {
@@ -115,6 +120,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         BackgroundGenerationManager.init(applicationContext)
         StudioLayoutManager.init(applicationContext)
+        PluginManager.init(applicationContext)
 
         handleTargetChatIntent(intent)
 
@@ -154,6 +160,10 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
+            LaunchedEffect(userSettings.appIconStyle) {
+                com.example.util.AppIconHelper.applyLauncherIcon(context, userSettings.appIconStyle)
+            }
+
             val currentFontFamily = remember(userSettings.fontFamilyChoice, userSettings.customFontPath) {
                 com.example.ui.theme.FontHelper.resolveFontFamily(
                     userSettings.fontFamilyChoice,
@@ -168,7 +178,8 @@ class MainActivity : ComponentActivity() {
                 fontFamily = currentFontFamily
             ) {
                 CompositionLocalProvider(
-                    com.example.util.LocalAppLanguage provides userSettings.appLanguage
+                    com.example.util.LocalAppLanguage provides userSettings.appLanguage,
+                    com.example.ui.components.LocalIconPack provides userSettings.iconPack
                 ) {
                     Surface(modifier = Modifier.fillMaxSize()) {
                         var errorDialogText by remember { mutableStateOf<String?>(null) }
@@ -496,9 +507,9 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                         val isHalloweenActive by viewModel.isHalloweenEventActive.collectAsStateWithLifecycle()
+                        val isNewYearActive by viewModel.isNewYearEventActive.collectAsStateWithLifecycle()
                         val isChatVisibleOrAnimating = isChatMounted || isChatOverlayOpen
                         var isVerityGameOpen by rememberSaveable { mutableStateOf(false) }
-                        var isSkibidiGameOpen by rememberSaveable { mutableStateOf(false) }
                         val isVerityHotbarEnabled = (userSettings.verityUnlocked || userSettings.easterEggCode.trim().removePrefix("#").equals("VERITY", ignoreCase = true)) && userSettings.showVerityInHotbar
                         val showHotbar = currentRoute == "characters" && !isStoreOverlayOpen && !isCharacterEditorOpen && !isChatOverlayOpen && userSettings.isHotbarVisible
 
@@ -509,16 +520,6 @@ class MainActivity : ComponentActivity() {
                                 onDismiss = { isVerityGameOpen = false }
                             )
                         }
-
-                        if (isSkibidiGameOpen) {
-                            com.example.ui.components.Skibidi3DForestDialog(
-                                settings = userSettings,
-                                onUpdateSettings = { newSettings -> viewModel.updateUserSettings(newSettings) },
-                                onDismiss = { isSkibidiGameOpen = false }
-                            )
-                        }
-
-                        val perfMode = userSettings.animationPerformanceMode
 
                         Box(modifier = Modifier.fillMaxSize()) {
                             NavHost(
@@ -666,6 +667,9 @@ class MainActivity : ComponentActivity() {
                                     onOpenBackup = {
                                         navController.navigate("backup") { launchSingleTop = true }
                                     },
+                                    onOpenPlugins = {
+                                        navController.navigate("plugins") { launchSingleTop = true }
+                                    },
                                     onSwitchToClassic = {
                                         viewModel.updateUserSettings(userSettings.copy(uiVariant = "classic"))
                                     }
@@ -720,7 +724,8 @@ class MainActivity : ComponentActivity() {
                                                 onOpenStudioMode = { navController.navigate("studio_mode") { launchSingleTop = true } },
                                                 onOpenGeminiDebug = { navController.navigate("gemini_debug") { launchSingleTop = true } },
                                                 onOpenVerityGame = { isVerityGameOpen = true },
-                                                onOpenSkibidiGame = { isSkibidiGameOpen = true },
+                                                onOpenPlugins = { navController.navigate("plugins") { launchSingleTop = true } },
+                                                isNewYearActive = isNewYearActive,
                                                 onBack = { navigateBackPagerTab() }
                                             )
                                         }
@@ -804,6 +809,9 @@ class MainActivity : ComponentActivity() {
                                                 onOpenBackup = {
                                                     navController.navigate("backup") { launchSingleTop = true }
                                                 },
+                                                onOpenPlugins = {
+                                                    navController.navigate("plugins") { launchSingleTop = true }
+                                                },
                                                 onOpenPersonas = {
                                                     switchToPagerTab(1)
                                                 },
@@ -851,7 +859,8 @@ class MainActivity : ComponentActivity() {
                                                 onOpenStudioMode = { navController.navigate("studio_mode") { launchSingleTop = true } },
                                                 onOpenGeminiDebug = { navController.navigate("gemini_debug") { launchSingleTop = true } },
                                                 onOpenVerityGame = { isVerityGameOpen = true },
-                                                onOpenSkibidiGame = { isSkibidiGameOpen = true },
+                                                onOpenPlugins = { navController.navigate("plugins") { launchSingleTop = true } },
+                                                isNewYearActive = isNewYearActive,
                                                 onBack = { navigateBackPagerTab() }
                                             )
                                         }
@@ -895,6 +904,7 @@ class MainActivity : ComponentActivity() {
                                 onSaveCustomRelationshipTypesJson = { newCustomJson ->
                                     viewModel.updateUserSettings(userSettings.copy(customRelationshipTypesJson = newCustomJson))
                                 },
+                                providerProfiles = providerProfiles,
                                 onGenerateBotFromPrompt = { wishes, onDone, onError ->
                                     viewModel.generateBotFromPrompt(
                                         userWishes = wishes,
@@ -1012,7 +1022,8 @@ class MainActivity : ComponentActivity() {
                                 onOpenStudioMode = { navController.navigate("studio_mode") { launchSingleTop = true } },
                                 onOpenGeminiDebug = { navController.navigate("gemini_debug") { launchSingleTop = true } },
                                 onOpenVerityGame = { isVerityGameOpen = true },
-                                onOpenSkibidiGame = { isSkibidiGameOpen = true },
+                                onOpenPlugins = { navController.navigate("plugins") { launchSingleTop = true } },
+                                isNewYearActive = isNewYearActive,
                                 onBack = { safePopBackStack() }
                             )
                         }
@@ -1071,6 +1082,15 @@ class MainActivity : ComponentActivity() {
                                     viewModel.deletePersona(persona)
                                 },
                                  onBack = { safePopBackStack() }
+                            )
+                        }
+
+                        // 11. Plugins Screen
+                        composable("plugins") {
+                            com.example.ui.screens.plugins.PluginsScreen(
+                                userSettings = userSettings,
+                                onUpdateSettings = { newSettings -> viewModel.updateUserSettings(newSettings) },
+                                onBack = { safePopBackStack() }
                             )
                         }
                       }
@@ -1154,6 +1174,7 @@ class MainActivity : ComponentActivity() {
                                   onSaveCustomRelationshipTypesJson = { newCustomJson ->
                                       viewModel.updateUserSettings(userSettings.copy(customRelationshipTypesJson = newCustomJson))
                                   },
+                                  providerProfiles = providerProfiles,
                                   onGenerateBotFromPrompt = { wishes, onDone, onError ->
                                       viewModel.generateBotFromPrompt(
                                           userWishes = wishes,
@@ -1318,12 +1339,30 @@ class MainActivity : ComponentActivity() {
                           val resolvedInitialDraft = remember(hostChatId) {
                               viewModel.getDraftSync(hostChatId, displayChat?.draftText ?: "")
                           }
+                          LaunchedEffect(hostChatId, displayChar?.name) {
+                              if (hostChatId > 0L) {
+                                  PluginManager.dispatchChatOpened(hostChatId, displayChar?.name ?: "")
+                                  PluginManager.setChatCallbacks(
+                                      chatId = hostChatId,
+                                      insertMessage = { msgText, isUserMsg ->
+                                          viewModel.sendMessageOptimized(hostChatId, msgText, displayChat?.isTextingMode ?: false)
+                                      },
+                                      getActiveBotName = {
+                                          displayChar?.name ?: "Bot"
+                                      },
+                                      getActiveCharacter = {
+                                          displayChar
+                                      }
+                                  )
+                              }
+                          }
                           ChatScreen(
                               character = displayChar ?: emptyShellChar,
                               chat = displayChat ?: emptyShellChat,
                               allPersonas = personas,
                               activePersona = activePersona,
                               isHalloweenActive = isHalloweenActive,
+                              isNewYearActive = isNewYearActive,
                               initialDraftText = resolvedInitialDraft,
                               onChatInputTopYChanged = { yPx -> viewModel.updateChatInputTopYPx(yPx) },
                               returnedFailedMessageText = if (returnedFailedMessageText?.first == hostChatId) returnedFailedMessageText?.second else null,
@@ -1345,17 +1384,31 @@ class MainActivity : ComponentActivity() {
                               onSelectChatPersona = { personaId ->
                                   if (hostChatId > 0L) viewModel.setChatPersona(hostChatId, personaId)
                               },
+                              onSelectProviderProfile = { providerId ->
+                                  displayChat?.let { viewModel.updateChat(it.copy(providerProfileId = providerId)) }
+                              },
                               onDraftChange = { draft ->
                                   if (hostChatId > 0L) viewModel.setDraft(hostChatId, draft)
                               },
                               onUpdateChatNotes = { targetChatId, notes ->
                                   viewModel.updateChatNotes(targetChatId, notes)
                               },
+                              onArchiveAndCreateNewChat = { targetChatId, charId ->
+                                  viewModel.archiveAndCreateCompressedChat(targetChatId, charId) { newChatId ->
+                                      viewModel.setActiveChat(newChatId)
+                                  }
+                              },
                               onSendMessage = { text, imgUri ->
                                   val c = resolvedChat ?: return@ChatScreen
+                                  // 1. Check if handled by Lua plugin slash command hook
+                                  if (text.startsWith("/") && PluginManager.dispatchSlashCommand(text)) {
+                                      return@ChatScreen
+                                  }
+                                  // 2. Preprocess prompt through onBeforeSendPrompt hook
+                                  val effectivePrompt = PluginManager.dispatchBeforeSendPrompt(text)
                                   viewModel.sendMessageOptimized(
                                       chatId = c.id,
-                                      text = text,
+                                      text = effectivePrompt,
                                       isTextingMode = c.isTextingMode,
                                       imageUrl = imgUri,
                                       onAiStateChange = {},
@@ -1784,16 +1837,29 @@ class MainActivity : ComponentActivity() {
                           }
                       }
 
-                      // Boykisser Screen Companion Pet
-                      com.example.ui.components.BoykisserOverlay(
-                          enabled = userSettings.boykisserPetEnabled,
-                          variant = userSettings.boykisserPetVariant,
-                          speedFactor = userSettings.boykisserPetSpeed,
-                          isInChat = isChatVisibleOrAnimating,
-                          customTopYPx = chatInputTopYPx,
-                          behavior = if (isChatVisibleOrAnimating) userSettings.boykisserChatBehavior else userSettings.boykisserMainBehavior,
-                          modifier = Modifier.fillMaxSize().zIndex(200.0f)
-                      )
+                      // Screen Companion Pets (Up to 3 active pets simultaneously with advanced AI physics)
+                      if (userSettings.boykisserPetEnabled) {
+                          val activePets = remember(userSettings.selectedPetsJson, userSettings.boykisserPetVariant) {
+                              userSettings.getActivePetsList()
+                          }
+                          activePets.forEachIndexed { index, petVariant ->
+                              com.example.ui.components.BoykisserOverlay(
+                                  enabled = true,
+                                  variant = petVariant,
+                                  speedFactor = userSettings.boykisserPetSpeed,
+                                  isInChat = isChatVisibleOrAnimating,
+                                  customTopYPx = chatInputTopYPx,
+                                  behavior = if (isChatVisibleOrAnimating) userSettings.boykisserChatBehavior else userSettings.boykisserMainBehavior,
+                                  petIndex = index,
+                                  modifier = Modifier.fillMaxSize().zIndex(200.0f + index)
+                              )
+                          }
+                      }
+
+                      // Native Lua Dynamic Overlay Host (Images, animations, floating widgets)
+                      PluginOverlayHost(modifier = Modifier.fillMaxSize().zIndex(250f))
+                      // Native Lua Dynamic UI Host (Interactive floating widgets, modal dialogs)
+                      PluginUiHost(modifier = Modifier.fillMaxSize().zIndex(280f))
 
                       // Seasonal Event: Falling pumpkins overlay (only active if event in info.json is "halloween")
                       HalloweenPumpkinRainOverlay(
@@ -1813,12 +1879,19 @@ class MainActivity : ComponentActivity() {
                           }
                       )
 
-                      // "What's New in 1.0.0" Dialog on First Launch after Update
-                      if (!isLoading && userSettings.lastSeenWhatsNewVersion != "1.0.0") {
+                      // Seasonal Event: Falling snow overlay (only active if event in info.json is "newyear")
+                      SnowfallOverlay(
+                          isActive = isNewYearActive && !isChatVisibleOrAnimating,
+                          dropLimit = userSettings.pumpkinRainDropLimit,
+                          snowAlpha = userSettings.pumpkinRainAlpha
+                      )
+
+                      // "What's New in 1.1.0" Dialog on First Launch after Update
+                      if (!isLoading && userSettings.lastSeenWhatsNewVersion != "1.1.0") {
                           com.example.ui.components.WhatsNewDialog(
                               appLanguage = userSettings.appLanguage,
                               onConfirm = {
-                                  viewModel.updateUserSettings(userSettings.copy(lastSeenWhatsNewVersion = "1.0.0"))
+                                  viewModel.updateUserSettings(userSettings.copy(lastSeenWhatsNewVersion = "1.1.0"))
                               }
                           )
                       }

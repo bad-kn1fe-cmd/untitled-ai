@@ -225,11 +225,13 @@ fun UserFrameRepositoryDialog(
                         )
 
                         if (FrameParallaxController.isEnabled) {
-                            Text(
+                            AdaptiveIconText(
                                 text = if (isEn) "✨ 3D Parallax active: tilt phone to view" else "✨ 3D Параллакс активен: наклоните телефон",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.secondary,
-                                fontSize = 11.sp
+                                textStyle = MaterialTheme.typography.labelSmall,
+                                textColor = MaterialTheme.colorScheme.secondary,
+                                fontSize = 11.sp,
+                                iconSize = 12.dp,
+                                spacing = 4.dp
                             )
                         }
                     }
@@ -357,12 +359,14 @@ fun UserFrameRepositoryDialog(
                                 )
 
                                 if (item.isHalloween) {
-                                    Text(
+                                    AdaptiveIconText(
                                         text = "🎃 Event",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = Color(0xFFFF9E00),
+                                        textStyle = MaterialTheme.typography.labelSmall,
+                                        textColor = Color(0xFFFF9E00),
                                         fontSize = 9.sp,
-                                        fontWeight = FontWeight.Bold
+                                        fontWeight = FontWeight.Bold,
+                                        iconSize = 10.dp,
+                                        spacing = 2.dp
                                     )
                                 }
 

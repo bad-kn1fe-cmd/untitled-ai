@@ -40,7 +40,10 @@ object RoleplayPromptBuilder {
         customTemplate: String = "",
         userSettings: com.example.data.datastore.UserSettings? = null,
         maxTokens: Int = 1000,
-        lang: String = "ru"
+        lang: String = "ru",
+        userLastMessage: String = "",
+        queryEmbedding: FloatArray? = null,
+        indexedChunks: List<com.example.ai.rag.LoreChunk>? = null
     ): String {
         val isEn = lang.equals("en", ignoreCase = true) || userSettings?.appLanguage.equals("en", ignoreCase = true)
         val isFemboy = lang.equals("femboy", ignoreCase = true) || userSettings?.appLanguage.equals("femboy", ignoreCase = true)
@@ -63,7 +66,32 @@ object RoleplayPromptBuilder {
         sb.append(baseTemplate)
         sb.append("\n\n")
 
-        // 1. Character Identity
+        val isRagActive = userSettings?.ragEnabled != false
+
+        // Parse Knowledge Cards into Important (un-chunked, passed in full) and Standard (RAG chunked)
+        val importantCards = mutableListOf<Pair<String, String>>()
+        val standardCards = mutableListOf<Pair<String, String>>()
+
+        if (character.knowledgeCards.isNotBlank() && character.knowledgeCards != "[]") {
+            try {
+                val loreCards = JSONArray(character.knowledgeCards)
+                for (i in 0 until loreCards.length()) {
+                    val obj = loreCards.getJSONObject(i)
+                    val tTitle = formatText(obj.optString("title"), charName, userName)
+                    val tContent = formatText(obj.optString("content"), charName, userName)
+                    val isImp = obj.optBoolean("isImportant", false) || obj.optBoolean("important", false)
+                    if (tTitle.isNotBlank() || tContent.isNotBlank()) {
+                        if (isImp) {
+                            importantCards.add(tTitle to tContent)
+                        } else {
+                            standardCards.add(tTitle to tContent)
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        // 1. Character Identity & Full Biography (ALWAYS passed in full, without greeting or images)
         sb.append("### ПРОФИЛЬ ПЕРСОНАЖА:\n")
         sb.append("- Имя: $charName\n")
         sb.append("- Возраст: ${character.age} лет\n")
@@ -76,19 +104,21 @@ object RoleplayPromptBuilder {
         if (character.dislikes.isNotBlank()) sb.append("- Ненавидит/не любит: ${formatText(character.dislikes, charName, userName)}\n")
         sb.append("- Тон и манера речи: ${character.voiceStyle}\n")
 
-        // Lore Cards
-        try {
-            val loreCards = JSONArray(character.knowledgeCards)
-            if (loreCards.length() > 0) {
-                sb.append("\n### БАЗА ЗНАНИЙ И ЛОР:\n")
-                for (i in 0 until loreCards.length()) {
-                    val obj = loreCards.getJSONObject(i)
-                    val tTitle = formatText(obj.optString("title"), charName, userName)
-                    val tContent = formatText(obj.optString("content"), charName, userName)
-                    sb.append("- **$tTitle**: $tContent\n")
-                }
+        // Important Lore Cards (ALWAYS passed in clean full form, never chunked by RAG)
+        if (importantCards.isNotEmpty()) {
+            sb.append("\n### 🌟 КЛЮЧЕВОЙ ЛОР И ЗНАНИЯ (ОБЯЗАТЕЛЬНО УЧИТЫВАЙ В ПОЛНОМ ОБЪЕМЕ):\n")
+            importantCards.forEach { (title, content) ->
+                sb.append("- **$title**: $content\n")
             }
-        } catch (_: Exception) {}
+        }
+
+        // Standard Lore Cards (If RAG is inactive, pass all of them in full)
+        if (!isRagActive && standardCards.isNotEmpty()) {
+            sb.append("\n### БАЗА ЗНАНИЙ И ЛОР:\n")
+            standardCards.forEach { (title, content) ->
+                sb.append("- **$title**: $content\n")
+            }
+        }
 
         // User Persona Profile (If provided)
         if (userPersona != null) {
@@ -105,7 +135,15 @@ object RoleplayPromptBuilder {
             sb.append("ОБЯЗАТЕЛЬНО и неукоснительно учитывай этот образ собеседника в репликах, обращении и взаимодействиях.\n")
         }
 
-        // 2. Chat & Relationship Dynamics
+        // 2. Исходная завязка сюжета и предыстория встречи (Приветственное сообщение персонажа)
+        if (character.greetingMessage.isNotBlank()) {
+            val formattedGreeting = formatText(character.greetingMessage.trim(), charName, userName)
+            sb.append("\n### 🎬 ИСХОДНАЯ ЗАВЯЗКА СЮЖЕТА И СТАРТОВАЯ СЦЕНА (С ЧЕГО НАЧАЛАСЬ ИСТОРИЯ):\n")
+            sb.append("$formattedGreeting\n")
+            sb.append("(ВНИМАНИЕ: Это завязка вашей истории, предыстория отношений и исходная ситуация встречи. Неукоснительно помни эти ключевые факты и обстоятельства предыстории на протяжении всего ролплея!)\n")
+        }
+
+        // 3. Chat & Relationship Dynamics
         sb.append("\n### ДИНАМИКА ОТНОШЕНИЙ:\n")
         val relText = when (chat.relationshipType) {
             "strangers" -> "Незнакомцы (настороженность, дистанция)"
@@ -192,6 +230,13 @@ object RoleplayPromptBuilder {
             sb.append("\n")
         }
 
+        // 2.5 Физические ограничения, локация и непрерывность сцены
+        sb.append("\n### 📍 ПРАВИЛА НЕПРЕРЫВНОСТИ СЦЕНЫ, ЛОКАЦИИ И ФИЗИЧЕСКИХ ОГРАНИЧЕНИЙ:\n")
+        sb.append("1. **Место действия и обстановка (Локация):** Всегда помни и строго удерживай текущую локацию, где физически находятся персонажи (из завязки сюжета, хроники или недавних сообщений). Запрещено внезапно менять локацию или телепортироваться без явного логического описания перехода (например: *спустя час они приехали в...*). Все позы, жесты и окружение обязаны на 100% соответствовать этому месту.\n")
+        sb.append("2. **Физические ограничения и здоровье (СТРОЖАЙШИЙ ЗАПРЕТ НА ГАЛЛЮЦИНАЦИИ):** Неукоснительно помни и соблюдай физическое состояние персонажа (инвалидная коляска, паралич ног, хромота, травмы, болезни, слепота). Если персонаж в инвалидной коляске или парализован — **КАТЕГОРИЧЕСКИ И АБСОЛЮТНО ЗАПРЕЩЕНО** описывать, как он встает на ноги, делает шаги, ходит, бегает или топает! Все его перемещения происходят ТОЛЬКО на инвалидной коляске (катит колеса руками, разворачивает коляску) либо при помощи других. Отыгрывай его действия через руки, корпус, мимику, жесты, взгляд и голос.\n")
+        sb.append("3. **Одежда и обувь (без выдуманных каблуков):** Описывай только ту одежду и обувь, которая логична и соответствует персонажу и ситуации. Категорически запрещено выдумывать каблуки, шпильки или несоответствующие вещи, если они не указаны во внешности персонажа.\n")
+        sb.append("4. **Память о текущем разговоре:** Внимательно помни нить беседы и не переспрашивай то, о чём только что шла речь в последних репликах.\n")
+
         // 3. Formatting Rules
         sb.append("\n### СТРОГИЕ ПРАВИЛА ФОРМАТИРОВАНИЯ:\n")
         sb.append("1. Имя персонажа в действиях пиши двойными звёздочками: **${character.name}**\n")
@@ -230,10 +275,15 @@ object RoleplayPromptBuilder {
             sb.append("\n### РЕЖИМ 18+ ВКЛЮЧЕН: Разрешены взрослые темы и откровенные сцены, если они соответствуют характеру персонажа и развитию отношений.\n")
         }
 
-        if (customTemplate.isNotBlank()) {
-            sb.append("\n### ДОПОЛНИТЕЛЬНЫЕ ИНСТРУКЦИИ:\n")
-            sb.append(customTemplate)
-            sb.append("\n")
+        // 7. Hybrid Search RAG Lore Injection (for standard non-important lore cards)
+        if (isRagActive && standardCards.isNotEmpty()) {
+            val standardLoreText = standardCards.joinToString("\n\n") { "${it.first}: ${it.second}" }
+            val chunks = indexedChunks ?: com.example.ai.rag.TextChunker.chunkText(standardLoreText, "lore_${character.id}")
+            val relevantLore = com.example.ai.rag.ContextInjector.injectRelevantLore(userLastMessage, chunks, queryEmbedding, topK = userSettings?.ragTopK ?: 3)
+            if (!relevantLore.isNullOrBlank()) {
+                sb.append("\n### РЕЛЕВАНТНЫЕ ФРАГМЕНТЫ БАЗЫ ЗНАНИЙ И ЛОРА (RAG):\n")
+                sb.append(relevantLore).append("\n")
+            }
         }
 
         return sb.toString()
@@ -374,6 +424,7 @@ object RoleplayPromptBuilder {
 
     fun buildSummaryPrompt(
         characterName: String,
+        initialPlot: String? = null,
         previousSummary: String?,
         messagesText: String,
         currentBoard: com.example.util.RelationshipBoardState? = null
@@ -393,6 +444,7 @@ object RoleplayPromptBuilder {
         return """
             Ты — модуль долговременной памяти AI-ролплея.
             Проанализируй следующий фрагмент диалога между пользователем (Игрок) и персонажем "$characterName".
+            ${if (!initialPlot.isNullOrBlank()) "Исходная завязка сюжета и предыстория: $initialPlot\n" else ""}
             ${if (!previousSummary.isNullOrBlank()) "Предыдущая хроника: $previousSummary\n" else ""}
             $boardContext
             Диалог:
@@ -400,7 +452,7 @@ object RoleplayPromptBuilder {
             
             Выполни две задачи и верни строго в формате JSON:
             {
-              "summary": "Краткое связное повествовательное саммари (1-3 абзаца): что произошло, важные факты, решения, эмоциональные поворотные моменты.",
+              "summary": "Краткое связное повествовательное саммари (1-3 абзаца). В САМОМ НАЧАЛЕ ОБЯЗАТЕЛЬНО укажи текущую локацию и физическое состояние: «📍 Локация и обстановка: [где физически находятся персонажи, их позы и физические особенности (например: в больничной палате, сидит в инвалидной коляске)]». Затем подробно опиши, что произошло, о чём говорили, важные факты, решения и поворотные моменты. ОБЯЗАТЕЛЬНО помни и сохраняй исходную предысторию и завязку отношений, гармонично дополняя её новыми событиями.",
               "relationship": {
                 "status": "Краткое название статуса отношений (например: Любовь / Друзья / Симпатия / Знакомые / Недолюбие / Враги)",
                 "trustScore": 45, // целое число от -100 до +100

@@ -9,6 +9,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import com.example.ui.components.motionBlurOnScroll
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -43,6 +45,8 @@ import com.example.data.repository.CharacterSerializer
 import com.example.ui.components.AppAsyncImage
 import com.example.ui.components.AppLogo
 import com.example.ui.components.AvatarImage
+import com.example.ui.components.AdaptiveIconText
+import com.example.ui.components.AdaptiveUiIcon
 import com.example.ui.studio.studioElement
 import com.example.ui.screens.stories.StoryCard
 import com.example.ui.screens.stories.StoryEditDialog
@@ -83,6 +87,7 @@ fun CharacterListScreen(
     onUpdateSettings: (UserSettings) -> Unit = {},
     onOpenSettings: () -> Unit,
     onOpenBackup: () -> Unit,
+    onOpenPlugins: () -> Unit = {},
     onOpenPersonas: () -> Unit = {},
     onOpenStore: () -> Unit = {},
     onCheckUpdates: () -> Unit = {},
@@ -111,6 +116,14 @@ fun CharacterListScreen(
     val context = androidx.compose.ui.platform.LocalContext.current
     val isEn = com.example.util.LocalAppLanguage.current.equals("en", ignoreCase = true)
     val isFemboy = com.example.util.LocalAppLanguage.current.equals("femboy", ignoreCase = true)
+
+    var remotePetsCatalog by remember { mutableStateOf(com.example.util.PetManager.getCachedPets()) }
+    LaunchedEffect(Unit) {
+        val cat = com.example.util.PetManager.fetchPetCatalog()
+        if (cat.pets.isNotEmpty()) {
+            remotePetsCatalog = cat.pets
+        }
+    }
 
     var pendingExportCharacter by remember { mutableStateOf<CharacterEntity?>(null) }
     var pendingExportJson by remember { mutableStateOf("") }
@@ -427,12 +440,20 @@ fun CharacterListScreen(
             )
         },
         floatingActionButton = {
+            val fabShape = remember(userSettings.controlStyle, userSettings.buttonShapeWaves, userSettings.buttonShapeDepthPercent) {
+                if (userSettings.controlStyle == "material3") {
+                    com.example.ui.components.WavyScallopedShape(userSettings.buttonShapeWaves, userSettings.buttonShapeDepthPercent)
+                } else {
+                    CircleShape
+                }
+            }
+
             if (currentTab == 4) {
                 FloatingActionButton(
                     onClick = { showCreateStoryDialog = true },
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = Color.White,
-                    shape = CircleShape,
+                    shape = fabShape,
                     modifier = Modifier.studioElement("chats_fab_create")
                 ) {
                     Icon(Icons.Default.GroupAdd, contentDescription = "Создать групповой чат", modifier = Modifier.size(26.dp))
@@ -442,7 +463,7 @@ fun CharacterListScreen(
                     onClick = onCreateCharacter,
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = Color.White,
-                    shape = CircleShape,
+                    shape = fabShape,
                     modifier = Modifier.studioElement("chats_fab_create")
                 ) {
                     Icon(Icons.Default.Add, contentDescription = "Создать бота", modifier = Modifier.size(28.dp))
@@ -521,22 +542,22 @@ fun CharacterListScreen(
                 Tab(
                     selected = currentTab == 1,
                     onClick = { currentTab = 1 },
-                    text = { Text("📌 (${characters.count { it.isPinned && !it.isArchived && !it.isHidden }})", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+                    text = { AdaptiveIconText(text = "📌 (${characters.count { it.isPinned && !it.isArchived && !it.isHidden }})", fontSize = 12.sp, fontWeight = FontWeight.Bold, iconSize = 14.dp, spacing = 4.dp) }
                 )
                 Tab(
                     selected = currentTab == 2,
                     onClick = { currentTab = 2 },
-                    text = { Text("📦 (${characters.count { it.isArchived }})", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+                    text = { AdaptiveIconText(text = "📦 (${characters.count { it.isArchived }})", fontSize = 12.sp, fontWeight = FontWeight.Bold, iconSize = 14.dp, spacing = 4.dp) }
                 )
                 Tab(
                     selected = currentTab == 3,
                     onClick = { currentTab = 3 },
-                    text = { Text("👁️ (${characters.count { it.isHidden }})", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+                    text = { AdaptiveIconText(text = "👁️ (${characters.count { it.isHidden }})", fontSize = 12.sp, fontWeight = FontWeight.Bold, iconSize = 14.dp, spacing = 4.dp) }
                 )
                 Tab(
                     selected = currentTab == 4,
                     onClick = { currentTab = 4 },
-                    text = { Text("${if (isEn) "👥 Groups" else "👥 Группы"} (${stories.size})", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+                    text = { AdaptiveIconText(text = "${if (isEn) "👥 Groups" else "👥 Группы"} (${stories.size})", fontSize = 12.sp, fontWeight = FontWeight.Bold, iconSize = 14.dp, spacing = 4.dp) }
                 )
             }
 
@@ -594,7 +615,7 @@ fun CharacterListScreen(
                             FilterChip(
                                 selected = sortMode == "interaction_desc",
                                 onClick = { sortMode = "interaction_desc" },
-                                label = { Text(if (isEn) "🕒 Activity" else "🕒 Активность", fontSize = 11.sp) },
+                                label = { AdaptiveIconText(text = if (isEn) "🕒 Activity" else "🕒 Активность", fontSize = 11.sp, iconSize = 14.dp, spacing = 4.dp) },
                                 shape = RoundedCornerShape(8.dp)
                             )
                         }
@@ -602,7 +623,7 @@ fun CharacterListScreen(
                             FilterChip(
                                 selected = sortMode == "name_asc",
                                 onClick = { sortMode = "name_asc" },
-                                label = { Text(if (isEn) "🔤 A-Z" else "🔤 А-Я", fontSize = 11.sp) },
+                                label = { AdaptiveIconText(text = if (isEn) "🔤 A-Z" else "🔤 А-Я", fontSize = 11.sp, iconSize = 14.dp, spacing = 4.dp) },
                                 shape = RoundedCornerShape(8.dp)
                             )
                         }
@@ -610,7 +631,7 @@ fun CharacterListScreen(
                             FilterChip(
                                 selected = sortMode == "name_desc",
                                 onClick = { sortMode = "name_desc" },
-                                label = { Text(if (isEn) "🔤 Z-A" else "🔤 Я-А", fontSize = 11.sp) },
+                                label = { AdaptiveIconText(text = if (isEn) "🔤 Z-A" else "🔤 Я-А", fontSize = 11.sp, iconSize = 14.dp, spacing = 4.dp) },
                                 shape = RoundedCornerShape(8.dp)
                             )
                         }
@@ -618,7 +639,7 @@ fun CharacterListScreen(
                             FilterChip(
                                 selected = sortMode == "created_desc",
                                 onClick = { sortMode = "created_desc" },
-                                label = { Text(if (isEn) "📅 Newest" else "📅 Новые", fontSize = 11.sp) },
+                                label = { AdaptiveIconText(text = if (isEn) "📅 Newest" else "📅 Новые", fontSize = 11.sp, iconSize = 14.dp, spacing = 4.dp) },
                                 shape = RoundedCornerShape(8.dp)
                             )
                         }
@@ -626,7 +647,7 @@ fun CharacterListScreen(
                             FilterChip(
                                 selected = sortMode == "created_asc",
                                 onClick = { sortMode = "created_asc" },
-                                label = { Text(if (isEn) "⏳ Oldest" else "⏳ Старые", fontSize = 11.sp) },
+                                label = { AdaptiveIconText(text = if (isEn) "⏳ Oldest" else "⏳ Старые", fontSize = 11.sp, iconSize = 14.dp, spacing = 4.dp) },
                                 shape = RoundedCornerShape(8.dp)
                             )
                         }
@@ -719,78 +740,85 @@ fun CharacterListScreen(
                 }
             } else {
                 // CHARACTERS TAB
-                if (sortedCharacters.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(24.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.PersonSearch,
-                                contentDescription = null,
-                                modifier = Modifier.size(64.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                            )
-                            Text(
-                                text = when (currentTab) {
-                                    1 -> "Нет закрепленных персонажей"
-                                    2 -> "Архив пуст"
-                                    3 -> "Нет скрытых персонажей"
-                                    else -> if (characters.isEmpty()) "Список персонажей пуст" else "Ничего не найдено"
-                                },
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = if (characters.isEmpty()) "Создайте нового бота или импортируйте JSON-карточку." else "Попробуйте переключить вкладку или изменить фильтр.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            if (characters.isEmpty()) {
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                val chatsByCharacterId = remember(chats) {
+                    chats.groupBy { it.characterId }
+                }
+                val classicListState = rememberLazyListState()
+
+                LazyColumn(
+                    state = classicListState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .motionBlurOnScroll(userSettings.pluginMotionBlurEnabled, classicListState, userSettings.pluginMotionBlurIntensity),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 88.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    if (sortedCharacters.isEmpty()) {
+                        item(key = "classic_empty_placeholder") {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 32.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
-                                    Button(
-                                        onClick = {
-                                            characterFileImportLauncher.launch(arrayOf("application/json", "text/*", "*/*"))
+                                    Icon(
+                                        imageVector = Icons.Default.PersonSearch,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(64.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                    )
+                                    Text(
+                                        text = when (currentTab) {
+                                            1 -> "Нет закрепленных персонажей"
+                                            2 -> "Архив пуст"
+                                            3 -> "Нет скрытых персонажей"
+                                            else -> if (characters.isEmpty()) "Список персонажей пуст" else "Ничего не найдено"
                                         },
-                                        shape = RoundedCornerShape(10.dp)
-                                    ) {
-                                        Icon(Icons.Default.FileOpen, contentDescription = null)
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Файл .json")
-                                    }
-                                    OutlinedButton(
-                                        onClick = {
-                                            importJsonText = ""
-                                            importError = null
-                                            showImportDialog = true
-                                        },
-                                        shape = RoundedCornerShape(10.dp)
-                                    ) {
-                                        Icon(Icons.Default.FileUpload, contentDescription = null)
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Вставить текст")
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = if (characters.isEmpty()) "Создайте нового бота или импортируйте JSON-карточку." else "Попробуйте переключить вкладку или изменить фильтр.",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    if (characters.isEmpty()) {
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Button(
+                                                onClick = {
+                                                    characterFileImportLauncher.launch(arrayOf("application/json", "text/*", "*/*"))
+                                                },
+                                                shape = RoundedCornerShape(10.dp)
+                                            ) {
+                                                Icon(Icons.Default.FileOpen, contentDescription = null)
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text("Файл .json")
+                                            }
+                                            OutlinedButton(
+                                                onClick = {
+                                                    importJsonText = ""
+                                                    importError = null
+                                                    showImportDialog = true
+                                                },
+                                                shape = RoundedCornerShape(10.dp)
+                                            ) {
+                                                Icon(Icons.Default.FileUpload, contentDescription = null)
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text("Вставить текст")
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
-                } else {
-                    val chatsByCharacterId = remember(chats) {
-                        chats.groupBy { it.characterId }
-                    }
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 88.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
-                    ) {
+                    } else {
                         items(
                             items = sortedCharacters,
                             key = { it.id },
@@ -870,16 +898,16 @@ fun CharacterListScreen(
                                                 modifier = Modifier.size(38.dp)
                                             ) {
                                                 Box(contentAlignment = Alignment.Center) {
-                                                    Text("🐾", fontSize = 20.sp)
+                                                    AdaptiveUiIcon("🐾", size = 20.dp, tint = MaterialTheme.colorScheme.primary)
                                                 }
                                             }
                                             Spacer(modifier = Modifier.width(10.dp))
                                             Column {
-                                                Text(
+                                                AdaptiveIconText(
                                                     text = if (isFemboy) "🐾 Хранилище питомцев (uwu)" else if (isEn) "🐾 Pet Vault" else "🐾 Хранилище питомцев",
-                                                    style = MaterialTheme.typography.titleMedium,
+                                                    textStyle = MaterialTheme.typography.titleMedium,
                                                     fontWeight = FontWeight.ExtraBold,
-                                                    color = MaterialTheme.colorScheme.primary
+                                                    textColor = MaterialTheme.colorScheme.primary
                                                 )
                                                 Text(
                                                     text = if (isEn) "Select your active screen companion pet" else "Выбирайте активного питомца для экрана и общения",
@@ -893,19 +921,34 @@ fun CharacterListScreen(
 
                                     Spacer(modifier = Modifier.height(14.dp))
 
-                                    // Pet Cards (Static Sprite Previews)
-                                    val petsList = listOf(
-                                        Triple("classic", if (isFemboy) "🐱 Бойкиссер (>w<)" else if (isEn) "🐱 Boykisser" else "🐱 Бойкиссер", com.example.R.drawable.boykisser_classic),
-                                        Triple("pochita", if (isFemboy) "🐶 Почита ✨" else if (isEn) "🐶 Pochita" else "🐶 Почита ✨", com.example.R.drawable.pochita_classic)
-                                    )
-
-                                    Row(
+                                    // Pet Cards (Static Sprite Previews loaded from GitHub, up to 3 active)
+                                    LazyRow(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                                     ) {
-                                        petsList.forEach { (petId, petTitle, spriteRes) ->
-                                            val isSelected = if (petId == "pochita") userSettings.boykisserPetVariant.equals("pochita", ignoreCase = true)
-                                            else !userSettings.boykisserPetVariant.equals("pochita", ignoreCase = true)
+                                        items(remotePetsCatalog, key = { it.id }) { pet ->
+                                            val petTitle = if (isEn) pet.nameEn else pet.nameRu
+                                            val activePetsList = userSettings.getActivePetsList()
+                                            val isSelected = activePetsList.any { it.equals(pet.id, ignoreCase = true) || (pet.id == "boykisser" && it.equals("classic", ignoreCase = true)) }
+
+                                            val togglePet = {
+                                                val currentList = activePetsList.toMutableList()
+                                                val isCurrentlySelected = currentList.any { it.equals(pet.id, ignoreCase = true) || (pet.id == "boykisser" && it.equals("classic", ignoreCase = true)) }
+                                                if (isCurrentlySelected) {
+                                                    currentList.removeAll { it.equals(pet.id, ignoreCase = true) || (pet.id == "boykisser" && it.equals("classic", ignoreCase = true)) }
+                                                } else {
+                                                    if (currentList.size >= 3) currentList.removeAt(0)
+                                                    currentList.add(pet.id)
+                                                }
+                                                val newJson = org.json.JSONArray(currentList).toString()
+                                                val firstPet = currentList.firstOrNull() ?: ""
+                                                val isEnabled = currentList.isNotEmpty()
+                                                onUpdateSettings(userSettings.copy(
+                                                    selectedPetsJson = newJson,
+                                                    boykisserPetVariant = firstPet,
+                                                    boykisserPetEnabled = isEnabled
+                                                ))
+                                            }
 
                                             Surface(
                                                 shape = RoundedCornerShape(16.dp),
@@ -915,17 +958,15 @@ fun CharacterListScreen(
                                                     if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
                                                 ),
                                                 modifier = Modifier
-                                                    .weight(1f)
+                                                    .width(130.dp)
                                                     .clip(RoundedCornerShape(16.dp))
-                                                    .clickable {
-                                                        onUpdateSettings(userSettings.copy(boykisserPetVariant = petId, boykisserPetEnabled = true))
-                                                    }
+                                                    .clickable { togglePet() }
                                             ) {
                                                 Column(
                                                     modifier = Modifier.padding(12.dp),
                                                     horizontalAlignment = Alignment.CenterHorizontally
                                                 ) {
-                                                    // Static Sprite Preview
+                                                    // Static Sprite Preview from Remote URL
                                                     Box(
                                                         modifier = Modifier
                                                             .size(64.dp)
@@ -933,8 +974,8 @@ fun CharacterListScreen(
                                                             .background(Color.Black.copy(alpha = 0.25f)),
                                                         contentAlignment = Alignment.Center
                                                     ) {
-                                                        Image(
-                                                            painter = painterResource(id = spriteRes),
+                                                        com.example.ui.components.AppAsyncImage(
+                                                            model = pet.imageUrl,
                                                             contentDescription = petTitle,
                                                             modifier = Modifier.size(52.dp)
                                                         )
@@ -943,19 +984,18 @@ fun CharacterListScreen(
                                                     Spacer(modifier = Modifier.height(8.dp))
 
                                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                                        RadioButton(
+                                                        FilterChip(
                                                             selected = isSelected,
-                                                            onClick = {
-                                                                onUpdateSettings(userSettings.copy(boykisserPetVariant = petId, boykisserPetEnabled = true))
+                                                            onClick = { togglePet() },
+                                                            label = {
+                                                                Text(
+                                                                    text = petTitle,
+                                                                    fontSize = 11.5.sp,
+                                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                                    maxLines = 1
+                                                                )
                                                             },
-                                                            modifier = Modifier.size(20.dp)
-                                                        )
-                                                        Spacer(modifier = Modifier.width(6.dp))
-                                                        Text(
-                                                            text = petTitle,
-                                                            style = MaterialTheme.typography.labelMedium,
-                                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                                            fontSize = 12.sp
+                                                            shape = RoundedCornerShape(8.dp)
                                                         )
                                                     }
                                                 }
@@ -1349,12 +1389,14 @@ fun CharacterCard(
                         .align(Alignment.TopStart)
                         .padding(8.dp)
                 ) {
-                    Text(
+                    AdaptiveIconText(
                         text = relBadge,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White,
+                        textStyle = MaterialTheme.typography.labelSmall,
+                        textColor = Color.White,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.SemiBold,
+                        iconSize = 12.dp,
+                        spacing = 4.dp,
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                     )
                 }
@@ -1509,7 +1551,7 @@ fun CharacterCard(
                         onDismissRequest = { menuExpanded = false }
                     ) {
                         DropdownMenuItem(
-                            text = { Text(if (character.isPinned) "Открепить" else "Закрепить 📌") },
+                            text = { Text(if (character.isPinned) "Открепить" else "Закрепить") },
                             leadingIcon = { Icon(Icons.Default.PushPin, contentDescription = null) },
                             onClick = {
                                 menuExpanded = false
@@ -1517,7 +1559,7 @@ fun CharacterCard(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text(if (character.isArchived) "Разархивировать" else "В архив 📦") },
+                            text = { Text(if (character.isArchived) "Разархивировать" else "В архив") },
                             leadingIcon = { Icon(Icons.Default.Archive, contentDescription = null) },
                             onClick = {
                                 menuExpanded = false
@@ -1525,7 +1567,7 @@ fun CharacterCard(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text(if (character.isHidden) "Показать (убрать из скрытых)" else "Скрыть бота 👁️") },
+                            text = { Text(if (character.isHidden) "Показать (убрать из скрытых)" else "Скрыть бота") },
                             leadingIcon = { Icon(if (character.isHidden) Icons.Default.Visibility else Icons.Default.VisibilityOff, contentDescription = null) },
                             onClick = {
                                 menuExpanded = false
@@ -1848,7 +1890,7 @@ fun ChatSelectionDialog(
                         FilterChip(
                             selected = sortMode == "updated_desc",
                             onClick = { sortMode = "updated_desc" },
-                            label = { Text("🕒 Свежие", fontSize = 11.sp) },
+                            label = { AdaptiveIconText(text = "🕒 Свежие", fontSize = 11.sp, iconSize = 14.dp, spacing = 4.dp) },
                             shape = RoundedCornerShape(8.dp)
                         )
                     }
@@ -1856,7 +1898,7 @@ fun ChatSelectionDialog(
                         FilterChip(
                             selected = sortMode == "updated_asc",
                             onClick = { sortMode = "updated_asc" },
-                            label = { Text("⏳ Старые", fontSize = 11.sp) },
+                            label = { AdaptiveIconText(text = "⏳ Старые", fontSize = 11.sp, iconSize = 14.dp, spacing = 4.dp) },
                             shape = RoundedCornerShape(8.dp)
                         )
                     }
@@ -1864,7 +1906,7 @@ fun ChatSelectionDialog(
                         FilterChip(
                             selected = sortMode == "title_asc",
                             onClick = { sortMode = "title_asc" },
-                            label = { Text("🔤 А-Я", fontSize = 11.sp) },
+                            label = { AdaptiveIconText(text = "🔤 А-Я", fontSize = 11.sp, iconSize = 14.dp, spacing = 4.dp) },
                             shape = RoundedCornerShape(8.dp)
                         )
                     }
@@ -1872,7 +1914,7 @@ fun ChatSelectionDialog(
                         FilterChip(
                             selected = sortMode == "created_desc",
                             onClick = { sortMode = "created_desc" },
-                            label = { Text("📅 Создание", fontSize = 11.sp) },
+                            label = { AdaptiveIconText(text = "📅 Создание", fontSize = 11.sp, iconSize = 14.dp, spacing = 4.dp) },
                             shape = RoundedCornerShape(8.dp)
                         )
                     }
@@ -2021,12 +2063,14 @@ fun ChatSelectionDialog(
                                             shape = RoundedCornerShape(6.dp),
                                             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
                                         ) {
-                                            Text(
+                                            AdaptiveIconText(
                                                 text = "💬 Чат",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                                fontSize = 10.sp
+                                                textStyle = MaterialTheme.typography.labelSmall,
+                                                textColor = MaterialTheme.colorScheme.primary,
+                                                fontSize = 10.sp,
+                                                iconSize = 12.dp,
+                                                spacing = 4.dp,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                             )
                                         }
 

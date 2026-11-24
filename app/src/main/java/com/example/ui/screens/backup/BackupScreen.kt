@@ -40,14 +40,14 @@ fun BackupScreen(
     var importReplaceAll by remember { mutableStateOf(false) }
     val isEn = com.example.util.LocalAppLanguage.current.equals("en", ignoreCase = true)
 
-    // Launcher for creating ZIP export
+    // Launcher for creating .untitledsave export
     val exportLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("application/zip")
+        contract = ActivityResultContracts.CreateDocument("application/octet-stream")
     ) { uri ->
         if (uri != null) {
             coroutineScope.launch {
                 isOperating = true
-                statusMessage = if (isEn) "Creating selective backup archive..." else "Создание выборочного архива резервной копии..."
+                statusMessage = if (isEn) "Creating selective .untitledsave backup archive..." else "Создание выборочного архива резервной копии .untitledsave..."
                 val res = onExportBackup(uri, exportOptions)
                 statusMessage = if (res.isSuccess) {
                     val m = res.getOrNull()
@@ -187,7 +187,7 @@ fun BackupScreen(
 
                         Button(
                             onClick = {
-                                exportLauncher.launch("ai_roleplay_backup_${System.currentTimeMillis()}.zip")
+                                exportLauncher.launch("untitled_backup_${System.currentTimeMillis()}.untitledsave")
                             },
                             enabled = !isOperating,
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
@@ -196,7 +196,7 @@ fun BackupScreen(
                         ) {
                             Icon(Icons.Default.SaveAlt, contentDescription = null)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text(if (isEn) "Export to ZIP" else "Экспортировать в ZIP")
+                            Text(if (isEn) "Export .untitledsave" else "Экспортировать .untitledsave")
                         }
                     }
                 }
@@ -214,11 +214,11 @@ fun BackupScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.Download, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
                             Spacer(modifier = Modifier.width(10.dp))
-                            Text(if (isEn) "Import from ZIP Archive" else "Импорт из ZIP-архива", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text(if (isEn) "Import Backup (.untitledsave / .zip)" else "Импорт из файла .untitledsave / .zip", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = if (isEn) "Restore characters, stories and dialogues from backup archive. A detailed summary will be shown before importing." else "Восстановление персонажей, историй и диалогов из резервной копии. Перед импортом будет показана подробная сводка содержимого архива.",
+                            text = if (isEn) "Restore characters, stories and dialogues from backup archive (.untitledsave or .zip). A detailed summary will be shown before importing." else "Восстановление персонажей, историй и диалогов из файла .untitledsave или .zip. Перед импортом будет показана подробная сводка содержимого архива.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -227,7 +227,7 @@ fun BackupScreen(
 
                         Button(
                             onClick = {
-                                importLauncher.launch(arrayOf("application/zip", "application/octet-stream", "*/*"))
+                                importLauncher.launch(arrayOf("application/octet-stream", "application/zip", "application/x-zip-compressed", "*/*"))
                             },
                             enabled = !isOperating,
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
@@ -236,7 +236,7 @@ fun BackupScreen(
                         ) {
                             Icon(Icons.Default.FolderOpen, contentDescription = null)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text(if (isEn) "Select ZIP File to Import" else "Выбрать ZIP-файл для импорта")
+                            Text(if (isEn) "Select Backup File (.untitledsave / .zip)" else "Выбрать файл бэкапа (.untitledsave / .zip)")
                         }
                     }
                 }

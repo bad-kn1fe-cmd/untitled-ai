@@ -22,9 +22,10 @@ import kotlinx.coroutines.launch
         AiProviderProfileEntity::class,
         UserPersonaEntity::class,
         StoryEntity::class,
-        ComicEntity::class
+        ComicEntity::class,
+        LoreChunkEntity::class
     ],
-    version = 20,
+    version = 21,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -37,6 +38,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun userPersonaDao(): UserPersonaDao
     abstract fun storyDao(): StoryDao
     abstract fun comicDao(): ComicDao
+    abstract fun loreChunkDao(): LoreChunkDao
 
     companion object {
         @Volatile
@@ -135,6 +137,12 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_20_21 = object : Migration(20, 21) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("CREATE TABLE IF NOT EXISTS `lore_chunks` (`id` TEXT NOT NULL, `characterId` INTEGER NOT NULL, `text` TEXT NOT NULL, `keywordsJson` TEXT NOT NULL, `embeddingJson` TEXT, PRIMARY KEY(`id`))")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase = getInstance(context)
 
         fun getInstance(context: Context): AppDatabase {
@@ -145,7 +153,7 @@ abstract class AppDatabase : RoomDatabase() {
                         AppDatabase::class.java,
                         "ai_roleplay.db"
                     )
-                    .addMigrations(MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20)
+                    .addMigrations(MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21)
                     .fallbackToDestructiveMigration()
                     .addCallback(object : Callback() {
                         override fun onCreate(db: SupportSQLiteDatabase) {
@@ -222,62 +230,6 @@ abstract class AppDatabase : RoomDatabase() {
                                             )
                                         )
                                     } else if (assistant != null && assistant.avatarUri != "drawable://app_logo_black") {
-                                        database.characterDao().updateCharacter(assistant.copy(avatarUri = "drawable://app_logo_black"))
-                                    }
-
-                                    // Update default models for OpenRouter if needed
-                                    val openRouterProfile = database.aiProviderDao().getAllProfilesList().find { it.providerType == "OPENROUTER" }
-                                    if (openRouterProfile != null) {
-                                        var needsUpdate = false
-                                        var updated = openRouterProfile
-                                        if (updated.model.isBlank() || updated.model == "meta-llama/llama-3.3-70b-instruct:free" || updated.model == "deepseek/deepseek-chat") {
-                                            updated = updated.copy(model = "google/gemma-4-26b-a4b-it:free")
-                                            needsUpdate = true
-                                        }
-                                        if (updated.visionModel.isBlank() || updated.visionModel == "google/gemini-2.0-flash-001") {
-                                            updated = updated.copy(visionModel = "google/gemma-4-26b-a4b-it:free")
-                                            needsUpdate = true
-                                        }
-                                        if (needsUpdate) {
-                                            database.aiProviderDao().updateProfile(updated)
-                                        }
-                                    }
-
-                                    // Update default model for Google Gemini to gemini-3.5-flash-lite
-                                    val geminiProfiles = database.aiProviderDao().getAllProfilesList().filter { it.providerType == "GEMINI" }
-                                    for (gp in geminiProfiles) {
-                                        var updatedGp = gp
-                                        var gpNeedsUpdate = false
-                                        if (updatedGp.model.isBlank() || updatedGp.model == "gemini-2.5-flash") {
-                                            updatedGp = updatedGp.copy(model = "gemini-3.5-flash-lite")
-                                            gpNeedsUpdate = true
-                                        }
-                                        if (updatedGp.visionModel.isBlank() || updatedGp.visionModel == "gemini-2.5-flash") {
-                                            updatedGp = updatedGp.copy(visionModel = "gemini-3.5-flash-lite")
-                                            gpNeedsUpdate = true
-                                        }
-                                        if (gpNeedsUpdate) {
-                                            database.aiProviderDao().updateProfile(updatedGp)
-                                        }
-                                    }
-
-                                    // Ensure Civitai profile exists if no image profile
-                                    val civitaiExists = database.aiProviderDao().getAllProfilesList().any { it.providerType == "CIVITAI" }
-                                    if (!civitaiExists) {
-                                        database.aiProviderDao().insertProfile(
-                                            AiProviderProfileEntity(
-                                                name = "Civitai (Pony Diffusion V6)",
-                                                providerType = "CIVITAI",
-                                                baseUrl = "https://orchestration.civitai.com/v2/consumer",
-                                                apiKey = "",
-                                                model = "urn:air:sdxl:checkpoint:civitai:257201@290640",
-                                                isDefaultText = false,
-                                                isDefaultImage = true,
-                                                isImageProvider = true,
-                                                negativePrompt = "score_4, score_5, score_6, ugly, deformed, blurry, bad anatomy",
-                                                imageResolution = "832x1216"
-                                            )
-                                        )
                                     }
                                 } catch (_: Exception) {}
                             }
@@ -292,50 +244,6 @@ abstract class AppDatabase : RoomDatabase() {
     }
 
     suspend fun seedInitialData() {
-        if (aiProviderDao().getProfileCount() == 0) {
-            val openRouter = AiProviderProfileEntity(
-                name = "OpenRouter (Default)",
-                providerType = "OPENROUTER",
-                baseUrl = "https://openrouter.ai/api/v1",
-                apiKey = "",
-                model = "google/gemma-4-26b-a4b-it:free",
-                visionModel = "google/gemma-4-26b-a4b-it:free",
-                temperature = 0.85f,
-                topP = 0.95f,
-                maxTokens = 1800,
-                isDefaultText = true,
-                isDefaultImage = false,
-                isImageProvider = false
-            )
-            val gemini = AiProviderProfileEntity(
-                name = "Google Gemini (Text & Vision)",
-                providerType = "GEMINI",
-                baseUrl = "https://generativelanguage.googleapis.com",
-                apiKey = "",
-                model = "gemini-3.5-flash-lite",
-                visionModel = "gemini-3.5-flash-lite",
-                temperature = 0.85f,
-                topP = 0.95f,
-                maxTokens = 2048,
-                isDefaultText = false,
-                isDefaultImage = false,
-                isImageProvider = false
-            )
-            val civitai = AiProviderProfileEntity(
-                name = "Civitai (Pony Diffusion V6)",
-                providerType = "CIVITAI",
-                baseUrl = "https://orchestration.civitai.com/v2/consumer",
-                apiKey = "",
-                model = "urn:air:sdxl:checkpoint:civitai:257201@290640",
-                isDefaultText = false,
-                isDefaultImage = true,
-                isImageProvider = true,
-                negativePrompt = "score_4, score_5, score_6, ugly, deformed, blurry, bad anatomy",
-                imageResolution = "832x1216"
-            )
-            aiProviderDao().insertProfiles(listOf(openRouter, gemini, civitai))
-        }
-
         if (characterDao().getCharacterCount() == 0) {
             // Seed Assistant
             val assistant = CharacterEntity(

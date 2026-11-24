@@ -17,8 +17,10 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import com.example.ui.components.motionBlurOnScroll
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -48,6 +50,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -142,7 +145,8 @@ fun AppSettingsScreen(
     onOpenStudioMode: () -> Unit = {},
     onOpenGeminiDebug: () -> Unit = {},
     onOpenVerityGame: (() -> Unit)? = null,
-    onOpenSkibidiGame: (() -> Unit)? = null,
+    onOpenPlugins: () -> Unit = {},
+    isNewYearActive: Boolean = false,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -153,21 +157,15 @@ fun AppSettingsScreen(
     val listState = rememberLazyListState()
     val isScrolling by remember { derivedStateOf { listState.isScrollInProgress } }
     var showLocalVerityDialog by remember { mutableStateOf(false) }
-    var showLocalSkibidiDialog by remember { mutableStateOf(false) }
+    var showAndroid11EasterEgg by remember { mutableStateOf(false) }
+    var versionTapCount by remember { mutableIntStateOf(0) }
+    var lastVersionTapTime by remember { mutableLongStateOf(0L) }
 
     val launchVerityGame: () -> Unit = {
         if (onOpenVerityGame != null) {
             onOpenVerityGame()
         } else {
             showLocalVerityDialog = true
-        }
-    }
-
-    val launchSkibidiGame: () -> Unit = {
-        if (onOpenSkibidiGame != null) {
-            onOpenSkibidiGame()
-        } else {
-            showLocalSkibidiDialog = true
         }
     }
 
@@ -179,11 +177,9 @@ fun AppSettingsScreen(
         )
     }
 
-    if (showLocalSkibidiDialog) {
-        com.example.ui.components.Skibidi3DForestDialog(
-            settings = settings,
-            onUpdateSettings = onUpdateSettings,
-            onDismiss = { showLocalSkibidiDialog = false }
+    if (showAndroid11EasterEgg) {
+        com.example.ui.components.Android11EasterEggDialog(
+            onDismiss = { showAndroid11EasterEgg = false }
         )
     }
 
@@ -200,16 +196,18 @@ fun AppSettingsScreen(
 
     val novelExtra = if (settings.bubbleStyle == "novel") 1 else 0
     val geminiExtra = if (isGeminiMain) 1 else 0
+    val languageStartIndex = 1
     val wallpapersStartIndex = 12 + novelExtra
     val aiModelsStartIndex = 20 + novelExtra
     val behaviorStartIndex = 27 + novelExtra + geminiExtra
     val systemStartIndex = 33 + novelExtra + geminiExtra
+    val pluginsStartIndex = 40 + novelExtra + geminiExtra
 
     val ultraLazyCategoryMode = settings.settingsCategoryIsolationMode
     var selectedCategoryTab by remember { mutableIntStateOf(0) }
     var clickedTabOverride by remember { mutableStateOf<Int?>(null) }
 
-    val activeTabByScroll by remember(ultraLazyCategoryMode, selectedCategoryTab, wallpapersStartIndex, aiModelsStartIndex, behaviorStartIndex, systemStartIndex) {
+    val activeTabByScroll by remember(ultraLazyCategoryMode, selectedCategoryTab, wallpapersStartIndex, aiModelsStartIndex, behaviorStartIndex, systemStartIndex, pluginsStartIndex) {
         derivedStateOf {
             if (ultraLazyCategoryMode) {
                 selectedCategoryTab
@@ -217,11 +215,13 @@ fun AppSettingsScreen(
                 val firstVisible = listState.firstVisibleItemIndex
                 val canScrollForward = listState.canScrollForward
                 when {
-                    !canScrollForward && firstVisible >= behaviorStartIndex -> 4
-                    firstVisible >= systemStartIndex -> 4
-                    firstVisible >= behaviorStartIndex -> 3
-                    firstVisible >= aiModelsStartIndex -> 2
-                    firstVisible >= wallpapersStartIndex -> 1
+                    !canScrollForward && firstVisible >= systemStartIndex -> 5
+                    firstVisible >= pluginsStartIndex -> 6
+                    firstVisible >= systemStartIndex -> 5
+                    firstVisible >= behaviorStartIndex -> 4
+                    firstVisible >= aiModelsStartIndex -> 3
+                    firstVisible >= wallpapersStartIndex -> 2
+                    firstVisible >= languageStartIndex -> 1
                     else -> 0
                 }
             }
@@ -237,10 +237,12 @@ fun AppSettingsScreen(
     val settingsTabs = remember(isEn) {
         listOf(
             SettingsTabItem(if (isEn) "Appearance" else "Оформление", if (isEn) "Themes & color" else "Темы & цвет", Icons.Default.Palette),
+            SettingsTabItem(if (isEn) "Language" else "Язык", if (isEn) "Localization" else "Локализация", Icons.Default.Language),
             SettingsTabItem(if (isEn) "Wallpapers" else "Обои", if (isEn) "FX & Backgrounds" else "Фоны & эффект", Icons.Default.Wallpaper),
             SettingsTabItem(if (isEn) "AI & Models" else "ИИ & Модели", if (isEn) "Providers & API" else "Провайдеры & сеть", Icons.Default.Psychology),
             SettingsTabItem(if (isEn) "Behavior" else "Поведение", if (isEn) "Chat & tokens" else "Чат & токены", Icons.Default.Forum, badge = "AI"),
-            SettingsTabItem(if (isEn) "System" else "Система", if (isEn) "Backup & system" else "Бэкап & инфо", Icons.Default.SettingsBackupRestore)
+            SettingsTabItem(if (isEn) "System" else "Система", if (isEn) "Backup & system" else "Бэкап & инфо", Icons.Default.SettingsBackupRestore),
+            SettingsTabItem(if (isEn) "Plugins" else "Плагины", if (isEn) "Extensions & Lua" else "Моды & Lua", Icons.Default.Extension)
         )
     }
     val isVaultHub = settings.uiVariant == "vault_hub"
@@ -255,6 +257,7 @@ fun AppSettingsScreen(
     var showDownloadPromptConfirmDialog by remember { mutableStateOf(false) }
     var isDownloadingPrompt by remember { mutableStateOf(false) }
     var showFrameRepositoryDialog by remember { mutableStateOf(false) }
+    var appearanceSubTab by rememberSaveable { mutableStateOf("general") }
 
     val customWallpaperPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -621,6 +624,7 @@ fun AppSettingsScreen(
                                 3 -> if (isFemboy) "ИИ-Няшки и Модельки" else if (isEn) "AI Models & Providers" else "ИИ-Провайдеры и Модели"
                                 4 -> if (isFemboy) "Поведение и мармеладки" else if (isEn) "Behavior & Tokens" else "Поведение и генерация"
                                 5 -> if (isFemboy) "Сохраняшки и Система" else if (isEn) "Backup & System" else "Бэкапы и Система"
+                                6 -> if (isFemboy) "Плагинчики и Расширения" else if (isEn) "Plugins & Extensions" else "Плагины и Расширения"
                                 else -> if (isFemboy) "Настроечки" else if (isEn) "Settings" else "Настройки"
                             }
                         } else {
@@ -783,6 +787,13 @@ fun AppSettingsScreen(
                         subtitle = if (isFemboy) "Выборочный экспорт ZIP, обновления, промпты" else if (isEn) "ZIP export/import, updates, system prompt" else "Выборочный экспорт ZIP, обновления, промпт",
                         icon = Icons.Default.SettingsBackupRestore,
                         accentColor = Color(0xFF6366F1)
+                    ),
+                    HubCategoryItem(
+                        id = 6,
+                        title = if (isFemboy) "Плагинчики и Расширения" else if (isEn) "Plugins & Extensions" else "Плагины и Расширения",
+                        subtitle = if (isFemboy) "Импорт .uplugin, Motion Blur, Lua скрипты" else if (isEn) "Import .uplugin, Motion Blur, Lua scripts" else "Импорт .uplugin, Motion Blur, Lua скрипты",
+                        icon = Icons.Default.Extension,
+                        accentColor = Color(0xFFE11D48)
                     )
                 )
 
@@ -895,10 +906,12 @@ fun AppSettingsScreen(
                                             } else {
                                                 val targetIndex = when (index) {
                                                     0 -> 0
-                                                    1 -> wallpapersStartIndex
-                                                    2 -> aiModelsStartIndex
-                                                    3 -> behaviorStartIndex
-                                                    4 -> systemStartIndex
+                                                    1 -> languageStartIndex
+                                                    2 -> wallpapersStartIndex
+                                                    3 -> aiModelsStartIndex
+                                                    4 -> behaviorStartIndex
+                                                    5 -> systemStartIndex
+                                                    6 -> pluginsStartIndex
                                                     else -> 0
                                                 }
                                                 coroutineScope.launch {
@@ -958,7 +971,8 @@ fun AppSettingsScreen(
                 state = listState,
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxHeight(),
+                    .fillMaxHeight()
+                    .motionBlurOnScroll(settings.pluginMotionBlurEnabled, listState, settings.pluginMotionBlurIntensity),
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 96.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp)
             ) {
@@ -1058,7 +1072,7 @@ fun AppSettingsScreen(
 
                 val activeCategorySection: Int? = if (isVaultHub) vaultHubSection else (if (settings.settingsCategoryIsolationMode) selectedCategoryTab else null)
 
-                // 0. Language & Interface Variant Section (Оформление & Язык)
+                // 1. Language Section (Язык интерфейса)
                 if (activeCategorySection == null || activeCategorySection == 1) {
                 item(key = "section_language") {
                     Text(
@@ -1178,6 +1192,31 @@ fun AppSettingsScreen(
                 }
 
                 if (activeCategorySection == null || activeCategorySection == 0) {
+                item(key = "appearance_subtabs") {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(
+                            selected = appearanceSubTab == "general",
+                            onClick = { appearanceSubTab = "general" },
+                            label = { Text(if (isEn) "General" else "Общее", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        FilterChip(
+                            selected = appearanceSubTab == "chats",
+                            onClick = { appearanceSubTab = "chats" },
+                            label = { Text(if (isEn) "Chats" else "Чаты", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                    }
+                }
+                
+                if (appearanceSubTab == "general") {
                 item(key = "section_appearance") {
                     Text(
                         text = if (isEn) "🎨 Appearance & Themes" else "🎨 Оформление",
@@ -1291,6 +1330,301 @@ fun AppSettingsScreen(
                                 }
                             }
 
+                        }
+                    }
+                }
+
+                item(key = "section_icon_packs") {
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
+                        border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Default.Category, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text(
+                                        text = if (isEn) "Icon Pack Style" else "Набор иконок",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Text(
+                                        text = if (isEn) "Change icon appearance across the entire interface" else "Стиль иконок во всём интерфейсе приложения",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            val emojiDownloads by com.example.ui.components.EmojiPackManager.downloadProgress.collectAsState()
+
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                com.example.ui.components.EmojiPackManager.AVAILABLE_PACKS.forEach { pack ->
+                                    val isSelected = settings.iconPack == pack.id
+                                    val title = if (isEn) pack.nameEn else pack.nameRu
+                                    val desc = if (isEn) pack.descEn else pack.descRu
+                                    val progress = emojiDownloads[pack.id]
+                                    val isOfflineReady = remember(pack.id, progress) {
+                                        if (pack.supportsDownload) com.example.ui.components.EmojiPackManager.isPackDownloaded(context, pack.id) else true
+                                    }
+
+                                    val selectAndDownload = {
+                                        onUpdateSettings(settings.copy(iconPack = pack.id))
+                                        if (pack.supportsDownload && !isOfflineReady && progress == null) {
+                                            com.example.ui.components.EmojiPackManager.downloadPack(context, pack.id)
+                                        }
+                                    }
+
+                                    Surface(
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
+                                        border = BorderStroke(1.dp, if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .clickable { selectAndDownload() }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            RadioButton(
+                                                selected = isSelected,
+                                                onClick = { selectAndDownload() }
+                                            )
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                    Text(title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                                    // Живое превью стиля
+                                                    CompositionLocalProvider(com.example.ui.components.LocalIconPack provides pack.id) {
+                                                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                            com.example.ui.components.AdaptiveUiIcon("💬", size = 16.dp)
+                                                            com.example.ui.components.AdaptiveUiIcon("🤖", size = 16.dp)
+                                                            com.example.ui.components.AdaptiveUiIcon("🎨", size = 16.dp)
+                                                            com.example.ui.components.AdaptiveUiIcon("⚙️", size = 16.dp)
+                                                        }
+                                                    }
+                                                }
+                                                Text(desc, fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                                                if (pack.supportsDownload) {
+                                                    Spacer(modifier = Modifier.height(4.dp))
+                                                    if (progress != null) {
+                                                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                                            LinearProgressIndicator(
+                                                                progress = { progress },
+                                                                modifier = Modifier
+                                                                    .fillMaxWidth()
+                                                                    .height(4.dp)
+                                                                    .clip(RoundedCornerShape(2.dp)),
+                                                                color = MaterialTheme.colorScheme.primary,
+                                                            )
+                                                            Text(
+                                                                if (isEn) "Downloading for offline... ${(progress * 100).toInt()}%" else "Скачивание в память... ${(progress * 100).toInt()}%",
+                                                                fontSize = 10.5.sp,
+                                                                color = MaterialTheme.colorScheme.primary
+                                                            )
+                                                        }
+                                                    } else if (isOfflineReady) {
+                                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                            Icon(Icons.Default.CloudDone, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(13.dp))
+                                                            Text(
+                                                                if (isEn) "Saved to memory (works offline)" else "Сохранено в память (работает оффлайн)",
+                                                                fontSize = 10.5.sp,
+                                                                color = MaterialTheme.colorScheme.primary
+                                                            )
+                                                        }
+                                                    } else {
+                                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                            Icon(Icons.Default.CloudDownload, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(13.dp))
+                                                            Text(
+                                                                if (isEn) "Downloads automatically on selection" else "Скачается автоматически при выборе",
+                                                                fontSize = 10.5.sp,
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            if (pack.supportsDownload && isOfflineReady && progress == null) {
+                                                IconButton(
+                                                    onClick = {
+                                                        com.example.ui.components.EmojiPackManager.downloadPack(context, pack.id, force = true)
+                                                    },
+                                                    modifier = Modifier.size(28.dp)
+                                                ) {
+                                                    Icon(
+                                                        Icons.Default.Refresh,
+                                                        contentDescription = if (isEn) "Re-download pack" else "Обновить пак",
+                                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                item(key = "section_app_launcher_icon") {
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
+                        border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Default.Apps, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text(
+                                        text = if (isEn) "App Launcher Icon" else "Иконка приложения",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Text(
+                                        text = if (isEn) "Choose default or original launcher icon" else "Выбирайте новую по умолчанию или исходную иконку",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                // 1. Classic Icon (Default / Original)
+                                val isClassic = settings.appIconStyle != "new"
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = if (isClassic) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
+                                    border = BorderStroke(if (isClassic) 2.dp else 1.dp, if (isClassic) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .clickable {
+                                            onUpdateSettings(settings.copy(appIconStyle = "classic"))
+                                            com.example.util.AppIconHelper.applyLauncherIcon(context, "classic")
+                                        }
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(12.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Surface(
+                                            shape = RoundedCornerShape(12.dp),
+                                            color = Color(0xFFEBEBF0),
+                                            border = BorderStroke(1.dp, Color(0xFFD0D0D8)),
+                                            modifier = Modifier.size(52.dp)
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Image(
+                                                    painter = painterResource(R.drawable.ic_launcher_foreground),
+                                                    contentDescription = "Classic Icon",
+                                                    modifier = Modifier.size(38.dp)
+                                                )
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Text(
+                                            text = if (isEn) "Classic (Default)" else "Исходная (По умолчанию)",
+                                            fontWeight = if (isClassic) FontWeight.Bold else FontWeight.Normal,
+                                            fontSize = 11.5.sp,
+                                            color = if (isClassic) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                        )
+                                        Text(
+                                            text = if (isEn) "Original 'U' frame" else "Фирменная 'U'",
+                                            fontSize = 9.5.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                        )
+                                    }
+                                }
+
+                                // 2. New Icon (Optional: File with X)
+                                val isNew = settings.appIconStyle == "new"
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = if (isNew) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
+                                    border = BorderStroke(if (isNew) 2.dp else 1.dp, if (isNew) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .clickable {
+                                            onUpdateSettings(settings.copy(appIconStyle = "new"))
+                                            com.example.util.AppIconHelper.applyLauncherIcon(context, "new")
+                                        }
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(12.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Surface(
+                                            shape = RoundedCornerShape(12.dp),
+                                            color = Color.White,
+                                            border = BorderStroke(1.dp, Color(0xFFE0E0E0)),
+                                            modifier = Modifier.size(52.dp)
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Image(
+                                                    painter = painterResource(R.drawable.ic_launcher_new_foreground),
+                                                    contentDescription = "New Icon",
+                                                    modifier = Modifier.size(38.dp)
+                                                )
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Text(
+                                            text = if (isEn) "New Icon" else "Новая иконка",
+                                            fontWeight = if (isNew) FontWeight.Bold else FontWeight.Normal,
+                                            fontSize = 11.5.sp,
+                                            color = if (isNew) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                        )
+                                        Text(
+                                            text = if (isEn) "File with X on white" else "Документ с крестиком",
+                                            fontSize = 9.5.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -1789,6 +2123,54 @@ fun AppSettingsScreen(
                                 }
                             }
                         }
+                        item {
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                        }
+                    } // close appearanceSubTab == general
+                    
+                    if (appearanceSubTab == "chats") {
+                        item {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp)
+                            ) {
+                                Text(if (isEn) "Chat Interface" else "Интерфейс чата", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                Spacer(modifier = Modifier.height(6.dp))
+                                
+                                val interfaceOptions = listOf(
+                                    "classic" to (if (isEn) "Classic" else "Классика"),
+                                    "deepseek" to "DeepSeek",
+                                    "gemini" to "Gemini",
+                                    "characterai" to "Character AI",
+                                    "janitorai" to "Janitor AI"
+                                )
+                                
+                                interfaceOptions.forEach { (key, label) ->
+                                    Surface(
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = if (settings.chatInterfaceTheme == key) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else Color.Transparent,
+                                        border = BorderStroke(1.dp, if (settings.chatInterfaceTheme == key) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 3.dp)
+                                            .clickable { onUpdateSettings(settings.copy(chatInterfaceTheme = key)) }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            RadioButton(
+                                                selected = settings.chatInterfaceTheme == key,
+                                                onClick = { onUpdateSettings(settings.copy(chatInterfaceTheme = key)) }
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(label, style = MaterialTheme.typography.bodyMedium)
+                                        }
+                                    }
+                                }
+                            }
+                        }
 
                         item {
                             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
@@ -1821,7 +2203,6 @@ fun AppSettingsScreen(
                                 }
                             }
                         }
-
                         item {
                             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
                         }
@@ -2084,7 +2465,10 @@ fun AppSettingsScreen(
                                 }
                             }
                         }
+                    } // close appearanceSubTab == chats
 
+                    if (appearanceSubTab == "general") {
+                        
                     // 5. Interface Animation Settings Card
                     item {
                         Surface(
@@ -2253,9 +2637,9 @@ fun AppSettingsScreen(
                                                 Spacer(modifier = Modifier.width(6.dp))
                                                 Column(modifier = Modifier.weight(1f)) {
                                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                                        Text(
+                                                        com.example.ui.components.AdaptiveIconText(
                                                             text = option.displayTitle(isEn),
-                                                            style = MaterialTheme.typography.bodyMedium,
+                                                            textStyle = MaterialTheme.typography.bodyMedium,
                                                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
                                                         )
                                                         Spacer(modifier = Modifier.width(6.dp))
@@ -2596,6 +2980,61 @@ fun AppSettingsScreen(
 
                                         Spacer(modifier = Modifier.height(10.dp))
 
+                                        // Active Companion Pets Selection (Allows unselecting Boykisser or picking any pets)
+                                        Text(
+                                            text = if (isFemboy) "Выбор активных питомцев (до 3 шт, uwu)" else if (isEn) "Active Pets Selection (up to 3)" else "Выбор активных питомцев на экране (до 3)",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        val allCatalogPets = remember { com.example.util.PetManager.getCachedPets() }
+                                        val activePetsList = settings.getActivePetsList()
+
+                                        androidx.compose.foundation.lazy.LazyRow(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            items(allCatalogPets, key = { it.id }) { pet ->
+                                                val petTitle = if (isEn) pet.nameEn else pet.nameRu
+                                                val isSelected = activePetsList.any { it.equals(pet.id, ignoreCase = true) || (pet.id == "boykisser" && it.equals("classic", ignoreCase = true)) }
+
+                                                val togglePet = {
+                                                    val currentList = activePetsList.toMutableList()
+                                                    val isCurrentlySelected = currentList.any { it.equals(pet.id, ignoreCase = true) || (pet.id == "boykisser" && it.equals("classic", ignoreCase = true)) }
+                                                    if (isCurrentlySelected) {
+                                                        currentList.removeAll { it.equals(pet.id, ignoreCase = true) || (pet.id == "boykisser" && it.equals("classic", ignoreCase = true)) }
+                                                    } else {
+                                                        if (currentList.size >= 3) currentList.removeAt(0)
+                                                        currentList.add(pet.id)
+                                                    }
+                                                    val newJson = org.json.JSONArray(currentList).toString()
+                                                    val firstPet = currentList.firstOrNull() ?: ""
+                                                    val isEnabled = currentList.isNotEmpty()
+                                                    onUpdateSettings(settings.copy(
+                                                        selectedPetsJson = newJson,
+                                                        boykisserPetVariant = firstPet,
+                                                        boykisserPetEnabled = isEnabled
+                                                    ))
+                                                }
+
+                                                FilterChip(
+                                                    selected = isSelected,
+                                                    onClick = { togglePet() },
+                                                    label = {
+                                                        Text(
+                                                            text = petTitle,
+                                                            fontSize = 11.5.sp,
+                                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                                        )
+                                                    },
+                                                    shape = RoundedCornerShape(8.dp)
+                                                )
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.height(10.dp))
+
                                         // Behavior on Main Screens (Tabs)
                                         Text(
                                             text = if (isFemboy) "Поведение на главных экранах (Вкладки)" else if (isEn) "Main Screens Behavior" else "Поведение на главных экранах (Вкладки)",
@@ -2647,6 +3086,194 @@ fun AppSettingsScreen(
                                 }
                             }
                         }
+
+                // Controls Style: Classic vs Material 3 Expressive
+                item(key = "section_appearance_button_shapes") {
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Category, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(
+                                        text = if (isFemboy) "Элементы управления (uwu)" else if (isEn) "Controls Style" else "Элементы управления",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = if (isEn) "Choose between Classic buttons or Material 3 Expressive scalloped shapes" else "Выберите стиль кнопок: Классический или Material 3 Expressive",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            // Style Selector Chips
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                val isClassic = settings.controlStyle != "material3"
+                                FilterChip(
+                                    selected = isClassic,
+                                    onClick = { onUpdateSettings(settings.copy(controlStyle = "classic")) },
+                                    label = { Text(if (isEn) "Classic" else "Классический", fontSize = 12.sp) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                                FilterChip(
+                                    selected = !isClassic,
+                                    onClick = { onUpdateSettings(settings.copy(controlStyle = "material3")) },
+                                    label = { Text(if (isEn) "Material 3 Expressive ✨" else "Material 3 Expressive ✨", fontSize = 12.sp) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+
+                            if (settings.controlStyle == "material3") {
+                                Spacer(modifier = Modifier.height(14.dp))
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                Text(
+                                    text = if (isEn) "Scalloped Shape Presets" else "Пресеты фигурных кнопок",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                // Presets Row
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    val presets = listOf(
+                                        ("cookie" to (if (isEn) "Cookie 🍪" else "Печенька 🍪")),
+                                        ("sun" to (if (isEn) "Sun ☀️" else "Солнце ☀️")),
+                                        ("flower" to (if (isEn) "Flower 🌸" else "Цветок 🌸")),
+                                        ("clover" to (if (isEn) "Clover 🍀" else "Клевер 🍀")),
+                                        ("circle" to (if (isEn) "Circle ⚪" else "Круг ⚪"))
+                                    )
+                                    items(presets) { (presetKey, presetLabel) ->
+                                        val isSelected = settings.buttonShapePreset == presetKey
+                                        FilterChip(
+                                            selected = isSelected,
+                                            onClick = {
+                                                val (waves, depth) = when (presetKey) {
+                                                    "cookie" -> 12 to 0.06f
+                                                    "sun" -> 8 to 0.08f
+                                                    "flower" -> 6 to 0.10f
+                                                    "clover" -> 4 to 0.12f
+                                                    "circle" -> 12 to 0.00f
+                                                    else -> 12 to 0.06f
+                                                }
+                                                onUpdateSettings(
+                                                    settings.copy(
+                                                        buttonShapePreset = presetKey,
+                                                        buttonShapeWaves = waves,
+                                                        buttonShapeDepthPercent = depth
+                                                    )
+                                                )
+                                            },
+                                            label = { Text(presetLabel, fontSize = 11.5.sp) },
+                                            shape = RoundedCornerShape(8.dp)
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(12.dp))
+
+                                // Waves Slider
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = if (isEn) "Waves Count: ${settings.buttonShapeWaves}" else "Количество волн: ${settings.buttonShapeWaves}",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                                Slider(
+                                    value = settings.buttonShapeWaves.toFloat(),
+                                    onValueChange = {
+                                        onUpdateSettings(settings.copy(buttonShapePreset = "custom", buttonShapeWaves = it.toInt()))
+                                    },
+                                    valueRange = 3f..20f,
+                                    steps = 16
+                                )
+
+                                // Depth Slider
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = if (isEn) "Wave Depth: ${(settings.buttonShapeDepthPercent * 100).toInt()}%" else "Глубина волны: ${(settings.buttonShapeDepthPercent * 100).toInt()}%",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                                Slider(
+                                    value = settings.buttonShapeDepthPercent,
+                                    onValueChange = {
+                                        onUpdateSettings(settings.copy(buttonShapePreset = "custom", buttonShapeDepthPercent = it))
+                                    },
+                                    valueRange = 0.0f..0.22f
+                                )
+
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                // Live Scalloped Button Preview
+                                Text(
+                                    text = if (isEn) "Live Scalloped Button Preview:" else "Живой предпросмотр формы кнопки:",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    val scallopedShape = com.example.ui.components.WavyScallopedShape(settings.buttonShapeWaves, settings.buttonShapeDepthPercent)
+                                    Surface(
+                                        shape = scallopedShape,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(52.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(Icons.Default.Send, contentDescription = null, tint = Color.White, modifier = Modifier.size(22.dp))
+                                        }
+                                    }
+
+                                    Surface(
+                                        shape = scallopedShape,
+                                        color = MaterialTheme.colorScheme.secondaryContainer,
+                                        modifier = Modifier.size(52.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(Icons.Default.AttachFile, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.size(22.dp))
+                                        }
+                                    }
+
+                                    Button(
+                                        onClick = {},
+                                        shape = RoundedCornerShape(50),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text(if (isEn) "Demo Button" else "Демо кнопка", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                } // End of appearanceSubTab == general
                 }
 
                 // Dedicated Wallpapers Management Section (Обои)
@@ -2692,152 +3319,6 @@ fun AppSettingsScreen(
                                         Switch(
                                             checked = settings.liveVideoWallpaperEnabled,
                                             onCheckedChange = { onUpdateSettings(settings.copy(liveVideoWallpaperEnabled = it)) }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        // Adaptive Accent Tinting for Avatars & Banners
-                        item {
-                            Surface(
-                                shape = RoundedCornerShape(16.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Column(modifier = Modifier.padding(16.dp)) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Column(modifier = Modifier.weight(1f).padding(end = 10.dp)) {
-                                            Text(
-                                                text = if (isFemboy) "🎨 Тонирование аватарок под цвет темы" else if (isEn) "Adaptive Accent Tinting" else "Тонирование аватарок под цвет темы",
-                                                style = MaterialTheme.typography.titleMedium,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                            Spacer(modifier = Modifier.height(2.dp))
-                                            Text(
-                                                text = if (isFemboy) "Аватарки ботиков, баннеры и рамочки слегка подкрашиваются в цвет выбранной темы (uwu)" else if (isEn) "Slightly tints bot avatars, banners, and frames in your active theme accent color" else "Аватарки ботов, баннеры и рамки слегка подкрашиваются в выбранный акцентный цвет темы",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                        Text(
-                                            text = "${(settings.accentTintIntensity * 100).toInt()}%",
-                                            style = MaterialTheme.typography.labelMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-
-                                    Spacer(modifier = Modifier.height(8.dp))
-
-                                    Slider(
-                                        value = settings.accentTintIntensity,
-                                        onValueChange = { onUpdateSettings(settings.copy(accentTintIntensity = it)) },
-                                        valueRange = 0.0f..0.40f,
-                                        steps = 7
-                                    )
-                                }
-                            }
-                        }
-
-                        // Boykisser Screen Companion Pet
-                        item {
-                            Surface(
-                                shape = RoundedCornerShape(16.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Column(modifier = Modifier.padding(16.dp)) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            modifier = Modifier.weight(1f).padding(end = 10.dp)
-                                        ) {
-                                            Text("🐱", fontSize = 22.sp)
-                                            Spacer(modifier = Modifier.width(10.dp))
-                                            Column {
-                                                Text(
-                                                    text = if (isFemboy) "Питомец Бойкиссер на экране 🐾" else if (isEn) "Boykisser Screen Companion" else "Питомец Бойкиссер на экране",
-                                                    style = MaterialTheme.typography.titleMedium,
-                                                    fontWeight = FontWeight.Bold
-                                                )
-                                                Text(
-                                                    text = if (isFemboy) "Милый бойкиссер бегает по экрану, не мешая чтению. Тапни, чтобы помурчать! (uwu)" else if (isEn) "A cute Boykisser pet walks along the screen edge without blocking text" else "Милый бойкиссер передвигается по краю экрана, не мешая чтению чатов и кнопкам",
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            }
-                                        }
-
-                                        Switch(
-                                            checked = settings.boykisserPetEnabled,
-                                            onCheckedChange = { onUpdateSettings(settings.copy(boykisserPetEnabled = it)) }
-                                        )
-                                    }
-
-                                    if (settings.boykisserPetEnabled) {
-                                        Spacer(modifier = Modifier.height(12.dp))
-                                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-                                        Spacer(modifier = Modifier.height(10.dp))
-
-                                        // Boykisser Variant Switcher: Classic (2D) vs 3D
-                                        Text(
-                                            text = if (isEn) "Boykisser Style" else "Стиль Бойкиссера",
-                                            style = MaterialTheme.typography.labelMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                        Spacer(modifier = Modifier.height(6.dp))
-                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            FilterChip(
-                                                selected = settings.boykisserPetVariant.equals("classic", ignoreCase = true),
-                                                onClick = { onUpdateSettings(settings.copy(boykisserPetVariant = "classic")) },
-                                                label = { Text(if (isFemboy) "2D Классика (>w<)" else if (isEn) "2D Classic" else "2D Классика (>w<)") },
-                                                shape = RoundedCornerShape(8.dp)
-                                            )
-                                            FilterChip(
-                                                selected = settings.boykisserPetVariant.equals("3d", ignoreCase = true),
-                                                onClick = { onUpdateSettings(settings.copy(boykisserPetVariant = "3d")) },
-                                                label = { Text(if (isFemboy) "3D Фигурка ✨" else if (isEn) "3D Figurine" else "3D Фигурка ✨") },
-                                                shape = RoundedCornerShape(8.dp)
-                                            )
-                                        }
-
-                                        Spacer(modifier = Modifier.height(10.dp))
-
-                                        // Boykisser Speed Slider
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                text = if (isEn) "Walking Speed" else "Скорость передвижения",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                            Text(
-                                                text = "${(settings.boykisserPetSpeed * 100).toInt()}%",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.primary
-                                            )
-                                        }
-                                        Slider(
-                                            value = settings.boykisserPetSpeed,
-                                            onValueChange = { onUpdateSettings(settings.copy(boykisserPetSpeed = it)) },
-                                            valueRange = 0.5f..2.5f,
-                                            steps = 19
                                         )
                                     }
                                 }
@@ -3088,7 +3569,6 @@ fun AppSettingsScreen(
                                 }
                             }
                         }
-
                         item {
                             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
                         }
@@ -3368,16 +3848,24 @@ fun AppSettingsScreen(
                                                 .weight(1f)
                                                 .padding(end = 8.dp)
                                         ) {
-                                            Text("🎃", fontSize = 20.sp)
+                                            Text(if (isNewYearActive) "❄️" else "🎃", fontSize = 20.sp)
                                             Spacer(modifier = Modifier.width(8.dp))
                                             Column(modifier = Modifier.weight(1f)) {
                                                 Text(
-                                                    if (isEn) "Pumpkin Rain Settings (Halloween)" else "Настройки дождя тыковок (Halloween)",
+                                                    if (isNewYearActive) {
+                                                        if (isEn) "Snowfall Settings (New Year)" else "Настройки снегопада (Новый Год)"
+                                                    } else {
+                                                        if (isEn) "Pumpkin Rain Settings (Halloween)" else "Настройки дождя тыковок (Halloween)"
+                                                    },
                                                     fontWeight = FontWeight.Bold,
                                                     style = MaterialTheme.typography.bodyMedium
                                                 )
                                                 Text(
-                                                    if (isEn) "Drop height and transparency of falling pumpkins on screen" else "Высота падения и прозрачность падающих тыковок на экране",
+                                                    if (isNewYearActive) {
+                                                        if (isEn) "Drop height and transparency of falling snowflakes on screen" else "Высота падения и прозрачность падающего снега на экране"
+                                                    } else {
+                                                        if (isEn) "Drop height and transparency of falling pumpkins on screen" else "Высота падения и прозрачность падающих тыковок на экране"
+                                                    },
                                                     style = MaterialTheme.typography.bodySmall,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
@@ -3426,14 +3914,23 @@ fun AppSettingsScreen(
                                             .background(Color.Black.copy(alpha = 0.4f))
                                             .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(14.dp))
                                     ) {
-                                        // Miniature falling pumpkins preview (paused during scroll for smooth 60fps list flinging)
-                                        HalloweenPumpkinRainOverlay(
-                                            isActive = !isScrolling,
-                                            onBlackPumpkinTapped = {},
-                                            dropLimit = settings.pumpkinRainDropLimit,
-                                            pumpkinAlpha = settings.pumpkinRainAlpha,
-                                            modifier = Modifier.fillMaxSize()
-                                        )
+                                        // Miniature falling preview (paused during scroll for smooth 60fps list flinging)
+                                        if (isNewYearActive) {
+                                            SnowfallOverlay(
+                                                isActive = !isScrolling,
+                                                dropLimit = settings.pumpkinRainDropLimit,
+                                                snowAlpha = settings.pumpkinRainAlpha,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        } else {
+                                            HalloweenPumpkinRainOverlay(
+                                                isActive = !isScrolling,
+                                                onBlackPumpkinTapped = {},
+                                                dropLimit = settings.pumpkinRainDropLimit,
+                                                pumpkinAlpha = settings.pumpkinRainAlpha,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        }
 
                                         // Cutoff boundary line indicator
                                         Box(
@@ -3694,7 +4191,10 @@ fun AppSettingsScreen(
                                 }
                             }
                         }
+                }
 
+                // 4. Поведение и генерация (Behavior & Tokens)
+                if (activeCategorySection == null || activeCategorySection == 4) {
                         // Custom Global System Prompt
                         item {
                             Surface(
@@ -3868,8 +4368,8 @@ fun AppSettingsScreen(
                             Slider(
                                 value = settings.contextWindowSize.toFloat(),
                                 onValueChange = { onUpdateSettings(settings.copy(contextWindowSize = it.toInt())) },
-                                valueRange = 4f..30f,
-                                steps = 25
+                                valueRange = 4f..50f,
+                                steps = 45
                             )
                         }
 
@@ -3908,10 +4408,7 @@ fun AppSettingsScreen(
                                 )
                             }
                         }
-                }
 
-                // 4. Поведение и длина ответов (Behavior & Tokens)
-                if (activeCategorySection == null || activeCategorySection == 4) {
                         item(key = "section_behavior") {
                             Text(
                                 text = if (isEn) "⚡ Behavior" else "⚡ Поведение",
@@ -4107,6 +4604,100 @@ fun AppSettingsScreen(
                             }
                         }
 
+                        // RAG Search Settings
+                        item {
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(if (isEn) "Hybrid Search RAG (Lore DB)" else "Гибридный поиск RAG (База знаний)", fontWeight = FontWeight.Bold)
+                                            Text(
+                                                text = if (isEn) "Contextual retrieval of memory for huge lore bases." else "Автоматическая векторная индексация для гигантских описаний.",
+                                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        Switch(
+                                            checked = settings.ragEnabled,
+                                            onCheckedChange = { onUpdateSettings(settings.copy(ragEnabled = it)) }
+                                        )
+                                    }
+
+                                    if (settings.ragEnabled) {
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        OutlinedTextField(
+                                            value = settings.ragEmbeddingModel,
+                                            onValueChange = { onUpdateSettings(settings.copy(ragEmbeddingModel = it)) },
+                                            placeholder = {
+                                                Text(if (isEn) "Default for current provider" else "По умолчанию для провайдера")
+                                            },
+                                            label = {
+                                                Text(if (isEn) "Embedding Model (optional)" else "Модель эмбеддингов (опционально)")
+                                            },
+                                            singleLine = true,
+                                            modifier = Modifier.fillMaxWidth(),
+                                            shape = RoundedCornerShape(10.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Custom Context Token Limit Setting
+                        item {
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Text(
+                                        text = if (isEn) "Context Token Limit" else "Лимит контекста (токенов)",
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = if (settings.customContextLimit == 0) {
+                                            if (isEn) "Auto by model (Gemini 1M, Claude 200k, GPT-4o 128k)" else "Автоопределение по модели (Gemini 1M, Claude 200k, GPT-4o 128k)"
+                                        } else {
+                                            if (isEn) "Manual limit: ${settings.customContextLimit} tokens" else "Ручной лимит: ${settings.customContextLimit} токенов"
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        val presets = listOf(
+                                            0 to (if (isEn) "Auto (Model)" else "Авто (По модели)"),
+                                            8192 to "8k",
+                                            16384 to "16k",
+                                            32768 to "32k",
+                                            128000 to "128k",
+                                            1000000 to "1M"
+                                        )
+                                        items(presets) { (valTokens, label) ->
+                                            FilterChip(
+                                                selected = settings.customContextLimit == valTokens,
+                                                onClick = { onUpdateSettings(settings.copy(customContextLimit = valTokens)) },
+                                                label = { Text(label, fontSize = 11.5.sp) }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         item {
                             Surface(
                                 shape = RoundedCornerShape(14.dp),
@@ -4289,236 +4880,86 @@ fun AppSettingsScreen(
                             }
                         }
 
-                        // Пасхалка / Секретный код
-                        item {
-                            Surface(
-                                shape = RoundedCornerShape(14.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
-                                modifier = Modifier
-                                    .studioElement("settings_easter_egg_card")
-                                    .fillMaxWidth()
-                            ) {
-                                Column(
+                        // Пасхалка #VERITY (доступна для тех, кто ее ранее активировал)
+                        val isVerityUnlockedNow = settings.verityUnlocked || settings.easterEggCode.trim().removePrefix("#").equals("VERITY", ignoreCase = true)
+                        if (isVerityUnlockedNow) {
+                            item {
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = Color(0xFFEAB308).copy(alpha = 0.14f),
+                                    border = BorderStroke(1.dp, Color(0xFFEAB308).copy(alpha = 0.45f)),
                                     modifier = Modifier
+                                        .studioElement("settings_easter_egg_card")
                                         .fillMaxWidth()
-                                        .padding(14.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            imageVector = Icons.Default.CardGiftcard,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(
-                                            text = if (isEn) "Easter Egg / Secret Code" else "Пасхалка / Секретный код",
-                                            fontWeight = FontWeight.Bold,
-                                            style = MaterialTheme.typography.bodyMedium
-                                        )
-                                    }
-                                    Text(
-                                        text = if (isEn) "Secret code or easter egg input field (saved in settings)" else "Поле ввода секретного кода или пасхалки (сохраняется в настройках)",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                    var easterEggInput by remember(settings.easterEggCode) {
-                                        mutableStateOf(settings.easterEggCode)
-                                    }
-
-                                    OutlinedTextField(
-                                        value = easterEggInput,
-                                        onValueChange = { newCode ->
-                                            easterEggInput = newCode
-                                            val isVerityMatch = newCode.trim().removePrefix("#").equals("VERITY", ignoreCase = true)
-                                            val wasVerityMatch = settings.easterEggCode.trim().removePrefix("#").equals("VERITY", ignoreCase = true)
-
-                                            val isSkibidiMatch = newCode.trim().removePrefix("#").equals("SKIBIDILEAVE", ignoreCase = true)
-                                            val wasSkibidiMatch = settings.easterEggCode.trim().removePrefix("#").equals("SKIBIDILEAVE", ignoreCase = true)
-
-                                            if (isVerityMatch) {
-                                                onUpdateSettings(
-                                                    settings.copy(
-                                                        easterEggCode = newCode,
-                                                        verityUnlocked = true,
-                                                        showVerityInHotbar = true,
-                                                        isHotbarVisible = true
-                                                    )
-                                                )
-                                                if (!wasVerityMatch) {
-                                                    launchVerityGame()
-                                                }
-                                            } else if (isSkibidiMatch) {
-                                                onUpdateSettings(
-                                                    settings.copy(
-                                                        easterEggCode = newCode,
-                                                        skibidiUnlocked = true
-                                                    )
-                                                )
-                                                if (!wasSkibidiMatch) {
-                                                    launchSkibidiGame()
-                                                }
-                                            } else {
-                                                onUpdateSettings(settings.copy(easterEggCode = newCode))
-                                            }
-                                        },
-                                        label = { Text(if (isEn) "Easter Egg" else "Пасхалка") },
-                                        placeholder = { Text(if (isEn) "Enter secret code..." else "Введите секретный код...") },
-                                        leadingIcon = {
-                                            Icon(
-                                                imageVector = Icons.Default.Celebration,
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.primary
-                                            )
-                                        },
-                                        trailingIcon = if (easterEggInput.isNotBlank()) {
-                                            {
-                                                IconButton(onClick = {
-                                                    easterEggInput = ""
-                                                    onUpdateSettings(settings.copy(easterEggCode = ""))
-                                                }) {
-                                                    Icon(
-                                                        imageVector = Icons.Default.Clear,
-                                                        contentDescription = if (isEn) "Clear" else "Очистить"
-                                                    )
-                                                }
-                                            }
-                                        } else null,
-                                        singleLine = true,
-                                        modifier = Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(10.dp)
-                                    )
-
-                                    val isVerityUnlockedNow = settings.verityUnlocked || settings.easterEggCode.trim().removePrefix("#").equals("VERITY", ignoreCase = true)
-                                    if (isVerityUnlockedNow) {
-                                        Spacer(modifier = Modifier.height(6.dp))
-                                        Surface(
-                                            shape = RoundedCornerShape(12.dp),
-                                            color = Color(0xFFEAB308).copy(alpha = 0.14f),
-                                            border = BorderStroke(1.dp, Color(0xFFEAB308).copy(alpha = 0.45f)),
-                                            modifier = Modifier.fillMaxWidth()
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(14.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
                                         ) {
-                                            Column(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(12.dp),
-                                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                                            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                                Text(
+                                                    text = if (isEn) "🎉 Easter Egg #VERITY Unlocked!" else "🎉 Пасхалка #VERITY открыта!",
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    fontWeight = FontWeight.ExtraBold,
+                                                    color = Color(0xFFFACC15)
+                                                )
+                                                Text(
+                                                    text = if (isEn) "Current Form: ${VerityStage.fromScore(settings.verityFormScore).title} (${settings.verityFormScore})" else "Текущая форма: ${VerityStage.fromScore(settings.verityFormScore).title} (${settings.verityFormScore})",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                            Button(
+                                                onClick = { launchVerityGame() },
+                                                colors = ButtonDefaults.buttonColors(
+                                                    containerColor = Color(0xFFEAB308),
+                                                    contentColor = Color.Black
+                                                ),
+                                                shape = RoundedCornerShape(10.dp),
+                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
                                             ) {
-                                                Row(
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.SpaceBetween
-                                                ) {
-                                                    Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                                                        Text(
-                                                            text = if (isEn) "🎉 Easter Egg #VERITY Unlocked!" else "🎉 Пасхалка #VERITY открыта!",
-                                                            style = MaterialTheme.typography.bodyMedium,
-                                                            fontWeight = FontWeight.ExtraBold,
-                                                            color = Color(0xFFFACC15)
-                                                        )
-                                                        Text(
-                                                            text = if (isEn) "Current Form: ${VerityStage.fromScore(settings.verityFormScore).title} (${settings.verityFormScore})" else "Текущая форма: ${VerityStage.fromScore(settings.verityFormScore).title} (${settings.verityFormScore})",
-                                                            style = MaterialTheme.typography.labelSmall,
-                                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                        )
-                                                    }
-                                                    Button(
-                                                        onClick = { launchVerityGame() },
-                                                        colors = ButtonDefaults.buttonColors(
-                                                            containerColor = Color(0xFFEAB308),
-                                                            contentColor = Color.Black
-                                                        ),
-                                                        shape = RoundedCornerShape(10.dp),
-                                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-                                                    ) {
-                                                        Text(if (isEn) "😊 Play" else "😊 Играть", fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
-                                                    }
-                                                }
-
-                                                HorizontalDivider(color = Color(0xFFEAB308).copy(alpha = 0.25f))
-
-                                                Row(
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.SpaceBetween
-                                                ) {
-                                                    Column(modifier = Modifier.weight(1f).padding(end = 10.dp)) {
-                                                        Text(
-                                                            text = if (isEn) "Show 😊 button in hotbar" else "Показывать кнопку 😊 в хотбаре",
-                                                            style = MaterialTheme.typography.bodySmall,
-                                                            fontWeight = FontWeight.Bold
-                                                        )
-                                                        Text(
-                                                            text = if (isEn) "If turned off, emoji button in hotbar will be hidden" else "Если выключить, кнопка со смайликом в хотбаре будет скрыта",
-                                                            style = MaterialTheme.typography.labelSmall,
-                                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                        )
-                                                    }
-                                                    Switch(
-                                                        checked = settings.showVerityInHotbar,
-                                                        onCheckedChange = { show ->
-                                                            onUpdateSettings(
-                                                                settings.copy(
-                                                                    verityUnlocked = true,
-                                                                    showVerityInHotbar = show,
-                                                                    isHotbarVisible = if (show) true else settings.isHotbarVisible
-                                                                )
-                                                            )
-                                                        }
-                                                    )
-                                                }
+                                                Text(if (isEn) "😊 Play" else "😊 Играть", fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
                                             }
                                         }
-                                    }
 
-                                    val isSkibidiUnlockedNow = settings.skibidiUnlocked || settings.easterEggCode.trim().removePrefix("#").equals("SKIBIDILEAVE", ignoreCase = true)
-                                    if (isSkibidiUnlockedNow) {
-                                        Spacer(modifier = Modifier.height(6.dp))
-                                        Surface(
-                                            shape = RoundedCornerShape(12.dp),
-                                            color = Color(0xFFEF4444).copy(alpha = 0.14f),
-                                            border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.45f)),
-                                            modifier = Modifier.fillMaxWidth()
+                                        HorizontalDivider(color = Color(0xFFEAB308).copy(alpha = 0.25f))
+
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
                                         ) {
-                                            Column(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(12.dp),
-                                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                                            ) {
-                                                Row(
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.SpaceBetween
-                                                ) {
-                                                    Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                                                        Text(
-                                                            text = if (isEn) "🚽 Easter Egg SKIBIDILEAVE Unlocked!" else "🚽 Пасхалка SKIBIDILEAVE открыта!",
-                                                            style = MaterialTheme.typography.bodyMedium,
-                                                            fontWeight = FontWeight.ExtraBold,
-                                                            color = Color(0xFFEF4444)
-                                                        )
-                                                        Text(
-                                                            text = if (isEn) "Defeat Skibidi Toilets in 3D Forest and save Agents 📹" else "Победи Скибиди Туалетов в 3D Лесу и спаси Агентов 📹",
-                                                            style = MaterialTheme.typography.labelSmall,
-                                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                        )
-                                                    }
-                                                    Button(
-                                                        onClick = { launchSkibidiGame() },
-                                                        colors = ButtonDefaults.buttonColors(
-                                                            containerColor = Color(0xFFEF4444),
-                                                            contentColor = Color.White
-                                                        ),
-                                                        shape = RoundedCornerShape(10.dp),
-                                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-                                                    ) {
-                                                        Text(if (isEn) "🚽 Play 3D" else "🚽 Играть 3D", fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
-                                                    }
-                                                }
+                                            Column(modifier = Modifier.weight(1f).padding(end = 10.dp)) {
+                                                Text(
+                                                    text = if (isEn) "Show 😊 button in hotbar" else "Показывать кнопку 😊 в хотбаре",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                                Text(
+                                                    text = if (isEn) "If turned off, emoji button in hotbar will be hidden" else "Если выключить, кнопка со смайликом в хотбаре будет скрыта",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
                                             }
+                                            Switch(
+                                                checked = settings.showVerityInHotbar,
+                                                onCheckedChange = { show ->
+                                                    onUpdateSettings(
+                                                        settings.copy(
+                                                            verityUnlocked = true,
+                                                            showVerityInHotbar = show,
+                                                            isHotbarVisible = if (show) true else settings.isHotbarVisible
+                                                        )
+                                                    )
+                                                }
+                                            )
                                         }
                                     }
                                 }
@@ -4549,7 +4990,37 @@ fun AppSettingsScreen(
                                     AppLogo(size = 64.dp, shapeRadius = 32.dp)
                                     Spacer(modifier = Modifier.height(12.dp))
                                     Text("Untitled", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                                    Text(if (isEn) "Version 1.0-alpha • Free Roleplay Engine" else "Версия 1.0-alpha • Свободный ролевой движок", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                                    Text(
+                                        text = if (isEn) "Version 1.1.0 • Free Roleplay Engine" else "Версия 1.1.0 • Свободный ролевой движок",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .clickable(
+                                                interactionSource = remember { MutableInteractionSource() },
+                                                indication = null
+                                            ) {
+                                                val now = System.currentTimeMillis()
+                                                if (now - lastVersionTapTime > 1800L) {
+                                                    versionTapCount = 1
+                                                } else {
+                                                    versionTapCount++
+                                                }
+                                                lastVersionTapTime = now
+
+                                                if (versionTapCount in 3..6) {
+                                                    val stepsLeft = 7 - versionTapCount
+                                                    android.widget.Toast.makeText(
+                                                        context,
+                                                        if (isEn) "Only $stepsLeft taps away from Android 11 Easter Egg!" else "Осталось $stepsLeft нажатий до пасхалки!",
+                                                        android.widget.Toast.LENGTH_SHORT
+                                                    ).show()
+                                                } else if (versionTapCount >= 7) {
+                                                    versionTapCount = 0
+                                                    showAndroid11EasterEgg = true
+                                                }
+                                            }
+                                    )
                                     
                                     Spacer(modifier = Modifier.height(12.dp))
                                     Text(
@@ -4740,21 +5211,21 @@ fun AppSettingsScreen(
                                     Text(if (isEn) "Application Features:" else "Особенности приложения:", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                                     
                                     val features = if (isEn) listOf(
-                                        "⚡ Open access to OpenRouter, Polza.ai, Groq, and any compatible endpoints",
-                                        "🔞 Full support for 18+ roleplay without topic restrictions",
-                                        "🎭 User Personas: choose your identity for each dialogue",
-                                        "🧠 Built-in autonomous Untitled Assistant for help and debugging",
-                                        "🔀 Dialogue branching and alternative story paths",
-                                        "🖼️ Custom wallpapers, parallax effect and color themes",
-                                        "📦 Full backup and character export to JSON"
+                                        " Open access to OpenRouter, Polza.ai, Groq, and any compatible endpoints",
+                                        "Full support for 18+ roleplay without topic restrictions",
+                                        "User Personas: choose your identity for each dialogue",
+                                        "Built-in autonomous Untitled Assistant for help and debugging",
+                                        "Dialogue branching and alternative story paths",
+                                        "Custom wallpapers, parallax effect and color themes",
+                                        "Full backup and character export to JSON"
                                     ) else listOf(
-                                        "⚡ Открытый доступ к OpenRouter, Polza.ai, Groq и любым совместимым эндпоинтам",
-                                        "🔞 Полная поддержка 18+ ролплея и отсутствие ограничений тем",
-                                        "🎭 Персоны пользователя: выбирайте от чьего лица ведете диалог",
-                                        "🧠 Автономный встроенный Untitled Ассистент для помощи и отладки",
-                                        "🔀 Ветвление диалогов и возможность альтернативных сюжетов",
-                                        "🖼️ Кастомизация фонов, параллакс-эффект и цветовая палитра",
-                                        "📦 Полное резервное копирование и экспорт персонажей в JSON"
+                                        "Открытый доступ к OpenRouter, Polza.ai, Groq и любым совместимым эндпоинтам",
+                                        "Полное отсутствие ограничений тем",
+                                        "Персоны пользователя: выбирайте от чьего лица ведете диалог",
+                                        "Автономный встроенный Untitled Ассистент для помощи и отладки",
+                                        "Ветвление диалогов и возможность альтернативных сюжетов",
+                                        "Большая кастомизация",
+                                        "Полное резервное копирование"
                                     )
 
                                     features.forEach { feat ->
@@ -4767,6 +5238,117 @@ fun AppSettingsScreen(
                                 }
                             }
                         }
+                }
+
+                // 6. Плагины и Расширения (Plugins & Lua Extensions)
+                if (activeCategorySection == null || activeCategorySection == 6) {
+                    item(key = "section_plugins_entry") {
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.Extension, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Column {
+                                            Text(
+                                                text = if (isFemboy) "🔌 Плагинчики и Моды (uwu)" else if (isEn) "Plugins & Extensions" else "Плагины и Расширения",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Text(
+                                                text = if (isEn) "Manage motion blur, import .uplugin scripts and test Lua code" else "Управление Motion Blur, импорт скриптов .uplugin и исполнение Lua-кода",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(14.dp))
+
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+                                    onClick = onOpenPlugins,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(14.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                            Icon(Icons.Default.Code, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+                                            Spacer(modifier = Modifier.width(12.dp))
+                                            Column {
+                                                Text(
+                                                    text = if (isEn) "Open Lua Plugin Manager" else "Открыть менеджер плагинов (Lua)",
+                                                    style = MaterialTheme.typography.titleSmall,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                                Text(
+                                                    text = if (isEn) "Manage mods, inspect logs, test scripts in IDE" else "Управление модами, оверлеи, слэш-команды и IDE",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+                                        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(14.dp))
+
+                                // Motion Blur Switch
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f).padding(end = 10.dp)) {
+                                        Text("Motion Blur", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                                        Text(
+                                            if (isEn) "Applies dynamic motion blur during rapid list scrolling" else "Динамическое размытие элементов при быстром скролле",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+
+                                    Switch(
+                                        checked = settings.pluginMotionBlurEnabled,
+                                        onCheckedChange = { onUpdateSettings(settings.copy(pluginMotionBlurEnabled = it)) }
+                                    )
+                                }
+
+                                if (settings.pluginMotionBlurEnabled) {
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(if (isEn) "Blur Intensity" else "Сила размытия (Blur)", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                        Text("${settings.pluginMotionBlurIntensity.toInt()} dp", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                                    }
+                                    Slider(
+                                        value = settings.pluginMotionBlurIntensity,
+                                        onValueChange = { onUpdateSettings(settings.copy(pluginMotionBlurIntensity = it)) },
+                                        valueRange = 2f..30f
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

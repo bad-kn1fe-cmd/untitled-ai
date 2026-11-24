@@ -43,10 +43,13 @@ import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.R
+import com.example.data.local.entity.AiProviderProfileEntity
 import com.example.data.local.entity.CharacterEntity
 import com.example.data.local.entity.UserPersonaEntity
 import com.example.ui.components.AppAsyncImage
 import com.example.ui.components.AvatarImage
+import com.example.ui.components.AdaptiveIconText
+import com.example.ui.components.AdaptiveUiIcon
 import com.example.ui.components.CharacterLimitIndicator
 import com.example.ui.components.PhotoCropEditorDialog
 import com.example.ui.components.CropMode
@@ -57,12 +60,17 @@ import com.example.util.RelationshipBoardHelper
 import com.example.util.RelationshipBoardState
 import org.json.JSONArray
 import org.json.JSONObject
-
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
+
+data class LoreCardData(
+    val title: String,
+    val content: String,
+    val isImportant: Boolean = false
+)
 
 private data class EditorAssistantChatTurn(
     val sender: String, // "user" or "assistant"
@@ -80,6 +88,7 @@ fun CharacterEditorScreen(
     onSaveFramesJson: ((String) -> Unit)? = null,
     customRelationshipTypesJson: String = "[]",
     onSaveCustomRelationshipTypesJson: ((String) -> Unit)? = null,
+    providerProfiles: List<AiProviderProfileEntity> = emptyList(),
     onGenerateBotFromPrompt: ((String, (com.example.ai.engine.GeneratedBotDraft) -> Unit, (String) -> Unit) -> Unit)? = null,
     onAssistBotInEditor: ((String, (com.example.ai.engine.GeneratedBotDraft) -> Unit, (String) -> Unit) -> Unit)? = null,
     onSave: (CharacterEntity) -> Unit,
@@ -264,12 +273,18 @@ fun CharacterEditorScreen(
 
     // Knowledge cards
     val knowledgeCards = remember(charKey) {
-        val list = mutableStateListOf<Pair<String, String>>()
+        val list = mutableStateListOf<LoreCardData>()
         try {
             val arr = JSONArray(savedKnowledgeCardsJson)
             for (i in 0 until arr.length()) {
                 val obj = arr.getJSONObject(i)
-                list.add(obj.optString("title") to obj.optString("content"))
+                list.add(
+                    LoreCardData(
+                        title = obj.optString("title"),
+                        content = obj.optString("content"),
+                        isImportant = obj.optBoolean("isImportant", false) || obj.optBoolean("important", false)
+                    )
+                )
             }
         } catch (_: Exception) {}
         list
@@ -277,10 +292,11 @@ fun CharacterEditorScreen(
 
     val syncKnowledgeCardsToSaved: () -> Unit = {
         val arr = JSONArray()
-        knowledgeCards.forEach { (t, c) ->
+        knowledgeCards.forEach { card ->
             val obj = JSONObject()
-            obj.put("title", t)
-            obj.put("content", c)
+            obj.put("title", card.title)
+            obj.put("content", card.content)
+            obj.put("isImportant", card.isImportant)
             arr.put(obj)
         }
         savedKnowledgeCardsJson = arr.toString()
@@ -333,7 +349,13 @@ fun CharacterEditorScreen(
                 val arr = JSONArray(character.knowledgeCards)
                 for (i in 0 until arr.length()) {
                     val obj = arr.getJSONObject(i)
-                    knowledgeCards.add(obj.optString("title") to obj.optString("content"))
+                    knowledgeCards.add(
+                        LoreCardData(
+                            title = obj.optString("title"),
+                            content = obj.optString("content"),
+                            isImportant = obj.optBoolean("isImportant", false) || obj.optBoolean("important", false)
+                        )
+                    )
                 }
             } catch (_: Exception) {}
             referenceImagesJson = character.referenceImages
@@ -374,7 +396,13 @@ fun CharacterEditorScreen(
                         val arr = JSONArray(imported.knowledgeCards)
                         for (i in 0 until arr.length()) {
                             val obj = arr.getJSONObject(i)
-                            knowledgeCards.add(obj.optString("title") to obj.optString("content"))
+                            knowledgeCards.add(
+                                LoreCardData(
+                                    title = obj.optString("title"),
+                                    content = obj.optString("content"),
+                                    isImportant = obj.optBoolean("isImportant", false) || obj.optBoolean("important", false)
+                                )
+                            )
                         }
                     } catch (_: Exception) {}
 
@@ -436,7 +464,7 @@ fun CharacterEditorScreen(
         derivedStateOf {
             name.length + shortDescription.length + personality.length +
                     appearance.length + habits.length + likes.length + dislikes.length +
-                    greetingMessage.length + knowledgeCards.sumOf { it.first.length + it.second.length }
+                    greetingMessage.length + knowledgeCards.sumOf { it.title.length + it.content.length }
         }
     }
     val isOverLimit = totalCharsLength > maxCharacterLimit
@@ -536,11 +564,11 @@ fun CharacterEditorScreen(
         }
         if (!draft.knowledgeCards.isNullOrEmpty()) {
             draft.knowledgeCards.forEach { (title, content) ->
-                val existingIdx = knowledgeCards.indexOfFirst { it.first.equals(title, ignoreCase = true) }
+                val existingIdx = knowledgeCards.indexOfFirst { it.title.equals(title, ignoreCase = true) }
                 if (existingIdx >= 0) {
-                    knowledgeCards[existingIdx] = title to content
+                    knowledgeCards[existingIdx] = knowledgeCards[existingIdx].copy(title = title, content = content)
                 } else {
-                    knowledgeCards.add(title to content)
+                    knowledgeCards.add(LoreCardData(title, content, false))
                 }
             }
             syncKnowledgeCardsToSaved()
@@ -683,10 +711,11 @@ fun CharacterEditorScreen(
 
                             val cardsArray = JSONArray()
                             knowledgeCards.forEach { card ->
-                                if (card.first.isNotBlank()) {
+                                if (card.title.isNotBlank() || card.content.isNotBlank()) {
                                     val obj = JSONObject()
-                                    obj.put("title", card.first)
-                                    obj.put("content", card.second)
+                                    obj.put("title", card.title)
+                                    obj.put("content", card.content)
+                                    obj.put("isImportant", card.isImportant)
                                     cardsArray.put(obj)
                                 }
                             }
@@ -785,7 +814,7 @@ fun CharacterEditorScreen(
                             )
                             Column {
                                 Text(
-                                    text = if (isEn) "✨ Create Bot from Prompt" else "✨ Создать бота по промпту",
+                                    text = if (isEn) "Create Bot from Prompt" else "Создать бота по промпту",
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface
@@ -1638,7 +1667,7 @@ fun CharacterEditorScreen(
                                         }
                                     }
                                     TextButton(onClick = {
-                                        knowledgeCards.add("" to "")
+                                        knowledgeCards.add(LoreCardData("", "", false))
                                         syncKnowledgeCardsToSaved()
                                     }) {
                                         Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -1672,8 +1701,8 @@ fun CharacterEditorScreen(
 
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+                                color = if (card.isImportant) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                                border = BorderStroke(1.dp, if (card.isImportant) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Column(modifier = Modifier.padding(12.dp)) {
@@ -1700,9 +1729,9 @@ fun CharacterEditorScreen(
                                         }
                                         Spacer(modifier = Modifier.width(4.dp))
                                         OutlinedTextField(
-                                            value = card.first,
+                                            value = card.title,
                                             onValueChange = { newTitle ->
-                                                knowledgeCards[index] = newTitle to card.second
+                                                knowledgeCards[index] = card.copy(title = newTitle)
                                                 syncKnowledgeCardsToSaved()
                                             },
                                             label = { Text(if (isEn) "Card Title" else "Заголовок карточки") },
@@ -1723,6 +1752,32 @@ fun CharacterEditorScreen(
                                         }
                                     }
 
+                                    Spacer(modifier = Modifier.height(6.dp))
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        FilterChip(
+                                            selected = card.isImportant,
+                                            onClick = {
+                                                knowledgeCards[index] = card.copy(isImportant = !card.isImportant)
+                                                syncKnowledgeCardsToSaved()
+                                            },
+                                            label = {
+                                                AdaptiveIconText(
+                                                    text = if (card.isImportant) "⭐ Очень важная (передавать всегда)" else "✂️ Обычная (делится на чанки RAG)",
+                                                    fontSize = 11.5.sp,
+                                                    fontWeight = if (card.isImportant) FontWeight.Bold else FontWeight.Normal,
+                                                    iconSize = 14.dp,
+                                                    spacing = 4.dp
+                                                )
+                                            },
+                                            shape = RoundedCornerShape(16.dp)
+                                        )
+                                    }
+
                                     AnimatedVisibility(
                                         visible = !isCollapsed,
                                         enter = fadeIn() + expandVertically(),
@@ -1731,9 +1786,9 @@ fun CharacterEditorScreen(
                                         Column {
                                             Spacer(modifier = Modifier.height(8.dp))
                                             OutlinedTextField(
-                                                value = card.second,
+                                                value = card.content,
                                                 onValueChange = { newContent ->
-                                                    knowledgeCards[index] = card.first to newContent
+                                                    knowledgeCards[index] = card.copy(content = newContent)
                                                     syncKnowledgeCardsToSaved()
                                                 },
                                                 label = { Text(if (isEn) "Content / Lore" else "Содержание / Лор") },
@@ -1744,10 +1799,10 @@ fun CharacterEditorScreen(
                                         }
                                     }
 
-                                    if (isCollapsed && card.second.isNotBlank()) {
+                                    if (isCollapsed && card.content.isNotBlank()) {
                                         Spacer(modifier = Modifier.height(4.dp))
                                         Text(
-                                            text = card.second,
+                                            text = card.content,
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                             maxLines = 1,
@@ -1951,6 +2006,21 @@ fun CharacterEditorScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
+                    val activeTextProfile = remember(providerProfiles) {
+                        providerProfiles.find { it.isDefaultText }
+                            ?: providerProfiles.firstOrNull { !it.isImageProvider && it.apiKey.isNotBlank() }
+                            ?: providerProfiles.firstOrNull { !it.isImageProvider }
+                            ?: providerProfiles.firstOrNull()
+                    }
+                    if (activeTextProfile != null) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "⚡ Провайдер: ${activeTextProfile.name} (${activeTextProfile.model.ifBlank { activeTextProfile.providerType }})",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
                     Spacer(modifier = Modifier.height(12.dp))
 
                     OutlinedTextField(
@@ -2088,7 +2158,7 @@ fun CharacterEditorScreen(
                         dislikes = dislikes,
                         greetingMessage = greetingMessage,
                         tagsText = tagsText,
-                        knowledgeCards = knowledgeCards.toList(),
+                        knowledgeCards = knowledgeCards.map { it.title to it.content },
                         userRequest = cleanReq
                     )
                     assistFn(
@@ -2181,8 +2251,14 @@ fun CharacterEditorScreen(
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold
                                 )
+                                val activeProfileSubtitle = remember(providerProfiles) {
+                                    val p = providerProfiles.find { it.isDefaultText }
+                                        ?: providerProfiles.firstOrNull { !it.isImageProvider && it.apiKey.isNotBlank() }
+                                        ?: providerProfiles.firstOrNull()
+                                    if (p != null) " • ИИ: ${p.name}" else ""
+                                }
                                 Text(
-                                    text = "Перетаскивай окно • Автозаполнение полей",
+                                    text = "Перетаскивай окно • Автозаполнение$activeProfileSubtitle",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 10.sp
@@ -2231,7 +2307,7 @@ fun CharacterEditorScreen(
                                 AssistChip(
                                     onClick = { sendAssistantRequest(promptText) },
                                     enabled = !isFloatingAssistantLoading,
-                                    label = { Text(label, fontSize = 11.sp) },
+                                    label = { AdaptiveIconText(text = label, fontSize = 11.sp, iconSize = 14.dp, spacing = 4.dp) },
                                     shape = RoundedCornerShape(10.dp)
                                 )
                             }
@@ -2274,11 +2350,13 @@ fun CharacterEditorScreen(
                                             )
                                             if (turn.updatedFields.isNotEmpty()) {
                                                 Spacer(modifier = Modifier.height(6.dp))
-                                                Text(
+                                                AdaptiveIconText(
                                                     text = "✅ Обновлено: ${turn.updatedFields.joinToString(", ")}",
-                                                    style = MaterialTheme.typography.labelSmall,
+                                                    textStyle = MaterialTheme.typography.labelSmall,
                                                     fontWeight = FontWeight.Bold,
-                                                    color = if (isUser) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary
+                                                    textColor = if (isUser) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
+                                                    iconSize = 12.dp,
+                                                    spacing = 4.dp
                                                 )
                                             }
                                         }
@@ -2564,7 +2642,13 @@ fun CharacterEditorScreen(
                                         val arr = JSONArray(imported.knowledgeCards)
                                         for (i in 0 until arr.length()) {
                                             val obj = arr.getJSONObject(i)
-                                            knowledgeCards.add(obj.optString("title") to obj.optString("content"))
+                                            knowledgeCards.add(
+                                                LoreCardData(
+                                                    title = obj.optString("title"),
+                                                    content = obj.optString("content"),
+                                                    isImportant = obj.optBoolean("isImportant", false) || obj.optBoolean("important", false)
+                                                )
+                                            )
                                         }
                                     } catch (_: Exception) {}
 

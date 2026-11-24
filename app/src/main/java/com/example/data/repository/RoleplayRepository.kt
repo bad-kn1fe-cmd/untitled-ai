@@ -401,7 +401,7 @@ class RoleplayRepository(private val db: AppDatabase) {
     suspend fun regenerateVariant(
         chatId: Long,
         messageId: Long,
-        contextWindowSize: Int = 12,
+        contextWindowSize: Int = 24,
         settingsSummary: String = "",
         openRouterFallbackModels: String = "",
         customSystemPrompt: String = "",
@@ -435,6 +435,32 @@ class RoleplayRepository(private val db: AppDatabase) {
         val latestSummary = db.summaryDao().getLatestSummary(chatId)
         val latestRelationship = db.relationshipDao().getLatestRelationshipTable(chatId)
 
+        val userLastMsgStr = targetMsg.content
+        val isRagEnabled = userSettings?.ragEnabled != false
+
+        val embeddingProvider = if (isRagEnabled) {
+            com.example.ai.rag.RemoteEmbeddingProvider(
+                apiKey = effectiveProfile.apiKey,
+                baseUrl = effectiveProfile.baseUrl,
+                model = userSettings?.ragEmbeddingModel,
+                providerType = effectiveProfile.providerType
+            )
+        } else null
+
+        val queryEmbedding = if (isRagEnabled && embeddingProvider != null && userLastMsgStr.isNotBlank()) {
+            kotlinx.coroutines.withTimeoutOrNull(6000L) {
+                embeddingProvider.getEmbedding(userLastMsgStr)
+            }
+        } else null
+
+        val fullLoreText = com.example.ai.rag.RagManager.extractStandardLoreText(character)
+
+        val indexedChunks = if (isRagEnabled && fullLoreText.length > 250 && embeddingProvider != null) {
+            kotlinx.coroutines.withTimeoutOrNull(8000L) {
+                com.example.ai.rag.RagManager.getIndexedChunks(character.id, fullLoreText, embeddingProvider, db.loreChunkDao())
+            }
+        } else null
+
         val systemPrompt = RoleplayPromptBuilder.buildSystemPrompt(
             character = character,
             chat = chat,
@@ -444,7 +470,10 @@ class RoleplayRepository(private val db: AppDatabase) {
             settingsSummary = settingsSummary,
             customTemplate = customSystemPrompt.ifBlank { textProfile.systemPromptTemplate },
             userSettings = userSettings,
-            maxTokens = effectiveMaxTokens
+            maxTokens = effectiveMaxTokens,
+            userLastMessage = userLastMsgStr,
+            queryEmbedding = queryEmbedding,
+            indexedChunks = indexedChunks
         )
 
         // Fetch recent messages before this message timestamp
@@ -554,12 +583,13 @@ class RoleplayRepository(private val db: AppDatabase) {
      */
     suspend fun generateAiResponse(
         chatId: Long,
-        contextWindowSize: Int = 12,
+        contextWindowSize: Int = 24,
         settingsSummary: String = "",
         isContinuation: Boolean = false,
         openRouterFallbackModels: String = "",
         customSystemPrompt: String = "",
         userSettings: com.example.data.datastore.UserSettings? = null,
+        isRegeneration: Boolean = false,
         onTokenStream: ((String) -> Unit)? = null
     ): Result<List<MessageEntity>> = withContext(Dispatchers.IO) {
         val chat = db.chatDao().getChatById(chatId) ?: return@withContext Result.failure(
@@ -590,6 +620,56 @@ class RoleplayRepository(private val db: AppDatabase) {
         val latestSummary = db.summaryDao().getLatestSummary(chatId)
         val latestRelationship = db.relationshipDao().getLatestRelationshipTable(chatId)
         val activePersona = (chat.personaId?.let { db.userPersonaDao().getPersonaById(it) } ?: db.userPersonaDao().getActivePersona())
+        val baseRecentMessages = run {
+            val currentMessages = db.messageDao().getRecentMessages(chatId, contextWindowSize).reversed()
+            val cleanCurrent = currentMessages.filter { !it.content.startsWith("📖") }
+
+            // If current chat has fewer messages than context window, check if it was created from an archived chat
+            if (cleanCurrent.size < contextWindowSize) {
+                val archiveSummary = db.summaryDao().getSummariesUpToTimestamp(chatId, Long.MAX_VALUE)
+                    .firstOrNull { it.messageRange.startsWith("archived_from_") }
+                val parentChatId = archiveSummary?.messageRange?.removePrefix("archived_from_")?.toLongOrNull()
+
+                if (parentChatId != null && parentChatId > 0L) {
+                    val neededCount = contextWindowSize - cleanCurrent.size
+                    val parentRecent = db.messageDao().getRecentMessages(parentChatId, contextWindowSize).reversed()
+                    val cleanParent = parentRecent.filter { !it.content.startsWith("📖") && it.content.isNotBlank() }
+                    val uniqueParent = cleanParent.filter { pMsg ->
+                        cleanCurrent.none { cMsg -> cMsg.content == pMsg.content && cMsg.sender == pMsg.sender }
+                    }
+                    val parentSlice = uniqueParent.takeLast(neededCount)
+                    parentSlice + cleanCurrent
+                } else {
+                    cleanCurrent
+                }
+            } else {
+                cleanCurrent
+            }
+        }
+        val userLastMsgStr = baseRecentMessages.lastOrNull { it.sender == "user" }?.content ?: ""
+
+        val isRagEnabled = userSettings?.ragEnabled != false
+        val embeddingProvider = if (isRagEnabled) com.example.ai.rag.RemoteEmbeddingProvider(
+            apiKey = effectiveProfile.apiKey, 
+            baseUrl = effectiveProfile.baseUrl,
+            model = userSettings?.ragEmbeddingModel,
+            providerType = effectiveProfile.providerType
+        ) else null
+
+        val queryEmbedding = if (isRagEnabled && userLastMsgStr.isNotBlank() && embeddingProvider != null) {
+            kotlinx.coroutines.withTimeoutOrNull(6000L) {
+                embeddingProvider.getEmbedding(userLastMsgStr)
+            }
+        } else null
+        
+        val fullLoreText = com.example.ai.rag.RagManager.extractStandardLoreText(character)
+        
+        val indexedChunks = if (isRagEnabled && fullLoreText.length > 250 && embeddingProvider != null) {
+            kotlinx.coroutines.withTimeoutOrNull(8000L) {
+                com.example.ai.rag.RagManager.getIndexedChunks(character.id, fullLoreText, embeddingProvider, db.loreChunkDao())
+            }
+        } else null
+
         val systemPrompt = RoleplayPromptBuilder.buildSystemPrompt(
             character = character,
             chat = chat,
@@ -599,11 +679,13 @@ class RoleplayRepository(private val db: AppDatabase) {
             settingsSummary = settingsSummary,
             customTemplate = customSystemPrompt.ifBlank { textProfile.systemPromptTemplate },
             userSettings = userSettings,
-            maxTokens = effectiveMaxTokens
+            maxTokens = effectiveMaxTokens,
+            userLastMessage = userLastMsgStr,
+            queryEmbedding = queryEmbedding,
+            indexedChunks = indexedChunks
         )
 
         val isEn = userSettings?.appLanguage.equals("en", ignoreCase = true)
-        val baseRecentMessages = db.messageDao().getRecentMessages(chatId, contextWindowSize).reversed()
         val recentMessages = if (isContinuation) {
             val continuationPrompt = if (isAssistant) {
                 if (isEn) "[Continue explanation or answer from where you left off without repeating.]"
@@ -670,7 +752,8 @@ class RoleplayRepository(private val db: AppDatabase) {
             providerProfile = textProfile,
             messageDao = db.messageDao(),
             summaryDao = db.summaryDao(),
-            relationshipDao = db.relationshipDao()
+            relationshipDao = db.relationshipDao(),
+            isRegeneration = isRegeneration
         )
 
         Result.success(resultMessages)
@@ -680,7 +763,7 @@ class RoleplayRepository(private val db: AppDatabase) {
         chatId: Long,
         messageId: Long,
         newText: String,
-        contextWindowSize: Int = 12,
+        contextWindowSize: Int = 24,
         settingsSummary: String = ""
     ): Result<List<MessageEntity>> = withContext(Dispatchers.IO) {
         val userMsg = db.messageDao().getMessageById(messageId) ?: return@withContext Result.failure(
@@ -693,7 +776,7 @@ class RoleplayRepository(private val db: AppDatabase) {
         db.messageDao().deleteMessagesAfter(chatId, userMsg.timestamp)
 
         // 3. Generate fresh response from AI provider
-        generateAiResponse(chatId, contextWindowSize, settingsSummary)
+        generateAiResponse(chatId, contextWindowSize, settingsSummary, isRegeneration = true)
     }
 
     suspend fun updateMessageText(messageId: Long, newText: String) = withContext(Dispatchers.IO) {
@@ -705,7 +788,7 @@ class RoleplayRepository(private val db: AppDatabase) {
         chatId: Long,
         userText: String,
         imageUrl: String? = null,
-        contextWindowSize: Int = 12,
+        contextWindowSize: Int = 24,
         settingsSummary: String = ""
     ): Result<List<MessageEntity>> = withContext(Dispatchers.IO) {
         insertUserMessage(chatId, userText, imageUrl)

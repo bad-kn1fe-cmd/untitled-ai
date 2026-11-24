@@ -25,9 +25,10 @@ data class UserSettings(
     val chatWallpaperAlpha: Float = 0.28f,
     val fontSizeSp: Int = 15,
     val bubbleStyle: String = "novel", // "bubbles", "novel"
+    val chatInterfaceTheme: String = "classic", // "classic", "deepseek", "gemini", "characterai", "janitorai"
     val showAvatarInChat: Boolean = true,
     val characterLimitMode: String = "standard", // "standard" (50000), "extended" (50000)
-    val contextWindowSize: Int = 12,
+    val contextWindowSize: Int = 24,
     val showInternalReasoningDebug: Boolean = false,
     val globalDefaultNsfw: Boolean = false,
     val textingModeDelayPreset: String = "normal", // "fast", "normal", "slow", "custom", "instant"
@@ -120,8 +121,56 @@ data class UserSettings(
     val boykisserPetSpeed: Float = 1.0f, // 0.5f - 2.5f Скорость бега
     val boykisserMainBehavior: String = "walk", // "walk" (Ходить) или "sit" (Сидеть)
     val boykisserChatBehavior: String = "walk", // "walk" (Ходить) или "sit" (Сидеть)
-    val lastSeenWhatsNewVersion: String = "" // Последняя увиденная версия для "Что нового"
+    val selectedPetsJson: String = "[\"boykisser\"]", // JSON до 3 питомцев одновременно
+    val lastSeenWhatsNewVersion: String = "", // Последняя увиденная версия для "Что нового"
+    val controlStyle: String = "classic", // "classic" (Классический) или "material3" (Material 3 Expressive)
+    val buttonShapePreset: String = "cookie", // "standard", "cookie", "sun", "flower", "clover", "circle", "custom"
+    val buttonShapeWaves: Int = 12,
+    val buttonShapeDepthPercent: Float = 0.06f,
+    val pluginMotionBlurEnabled: Boolean = false,
+    val pluginMotionBlurIntensity: Float = 12f,
+    val pluginBubblesEnabled: Boolean = false,
+    val pluginBubblesCount: Int = 15,
+    val ragEnabled: Boolean = true,
+    val ragEmbeddingModel: String = "",
+    val ragTopK: Int = 3,
+    val customContextLimit: Int = 0, // 0 = Auto by model, else manual token limit
+    val iconPack: String = "vector", // "vector", "system", "twemoji"
+    val appIconStyle: String = "classic" // "classic" (Default original glowing U) or "new" (bi-file-earmark-x on white)
 ) {
+    fun getEffectiveContextLimit(modelName: String): Int {
+        if (customContextLimit > 0) return customContextLimit
+        val m = modelName.lowercase()
+        return when {
+            m.contains("gemini") -> 1_000_000
+            m.contains("claude") -> 200_000
+            m.contains("gpt-4o") -> 128_000
+            m.contains("deepseek") -> 64_000
+            m.contains("llama-3.3") || m.contains("70b") -> 128_000
+            else -> 32_768
+        }
+    }
+    fun getActivePetsList(): List<String> {
+        if (selectedPetsJson.trim() == "[]") {
+            return emptyList()
+        }
+        if (selectedPetsJson.isBlank()) {
+            val fallback = if (boykisserPetVariant.isBlank() || boykisserPetVariant.equals("classic", ignoreCase = true)) "boykisser" else boykisserPetVariant
+            return listOf(fallback)
+        }
+        return try {
+            val arr = org.json.JSONArray(selectedPetsJson)
+            val list = mutableListOf<String>()
+            for (i in 0 until arr.length()) {
+                var item = arr.getString(i).trim()
+                if (item.equals("classic", ignoreCase = true)) item = "boykisser"
+                if (item.isNotBlank() && !list.contains(item)) list.add(item)
+            }
+            list.take(3)
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
     fun getCustomChatFolders(): List<CustomChatFolder> {
         val list = mutableListOf<CustomChatFolder>()
         try {
@@ -259,6 +308,7 @@ class UserPreferencesRepository(private val context: Context) {
         val KEY_WALLPAPER_ALPHA = floatPreferencesKey("wallpaper_alpha")
         val KEY_FONT_SIZE = intPreferencesKey("font_size")
         val KEY_BUBBLE_STYLE = stringPreferencesKey("bubble_style")
+val KEY_CHAT_INTERFACE_THEME = stringPreferencesKey("chat_interface_theme")
         val KEY_SHOW_AVATAR = booleanPreferencesKey("show_avatar")
         val KEY_CHARACTER_LIMIT = stringPreferencesKey("character_limit_mode")
         val KEY_CONTEXT_WINDOW = intPreferencesKey("context_window")
@@ -354,7 +404,22 @@ class UserPreferencesRepository(private val context: Context) {
         val KEY_BOYKISSER_PET_SPEED = floatPreferencesKey("boykisser_pet_speed")
         val KEY_BOYKISSER_MAIN_BEHAVIOR = stringPreferencesKey("boykisser_main_behavior")
         val KEY_BOYKISSER_CHAT_BEHAVIOR = stringPreferencesKey("boykisser_chat_behavior")
+        val KEY_SELECTED_PETS_JSON = stringPreferencesKey("selected_pets_json")
         val KEY_LAST_SEEN_WHATS_NEW_VERSION = stringPreferencesKey("last_seen_whats_new_version")
+        val KEY_CONTROL_STYLE = stringPreferencesKey("control_style")
+        val KEY_BUTTON_SHAPE_PRESET = stringPreferencesKey("button_shape_preset")
+        val KEY_BUTTON_SHAPE_WAVES = intPreferencesKey("button_shape_waves")
+        val KEY_BUTTON_SHAPE_DEPTH = floatPreferencesKey("button_shape_depth")
+        val KEY_PLUGIN_MOTION_BLUR_ENABLED = booleanPreferencesKey("plugin_motion_blur_enabled")
+        val KEY_PLUGIN_MOTION_BLUR_INTENSITY = floatPreferencesKey("plugin_motion_blur_intensity")
+        val KEY_PLUGIN_BUBBLES_ENABLED = booleanPreferencesKey("plugin_bubbles_enabled")
+        val KEY_PLUGIN_BUBBLES_COUNT = intPreferencesKey("plugin_bubbles_count")
+        val KEY_RAG_ENABLED = booleanPreferencesKey("rag_enabled")
+        val KEY_RAG_EMBEDDING_MODEL = stringPreferencesKey("rag_embedding_model")
+        val KEY_RAG_TOP_K = intPreferencesKey("rag_top_k")
+        val KEY_CUSTOM_CONTEXT_LIMIT = intPreferencesKey("custom_context_limit")
+        val KEY_ICON_PACK = stringPreferencesKey("icon_pack")
+        val KEY_APP_ICON_STYLE = stringPreferencesKey("app_icon_style")
     }
 
     val userSettingsFlow: Flow<UserSettings> = context.dataStore.data.map { pref ->
@@ -368,9 +433,10 @@ class UserPreferencesRepository(private val context: Context) {
             chatWallpaperAlpha = pref[KEY_WALLPAPER_ALPHA] ?: 0.28f,
             fontSizeSp = pref[KEY_FONT_SIZE] ?: 15,
             bubbleStyle = pref[KEY_BUBBLE_STYLE] ?: "bubbles",
-            showAvatarInChat = pref[KEY_SHOW_AVATAR] ?: true,
+        chatInterfaceTheme = pref[KEY_CHAT_INTERFACE_THEME] ?: "classic",
+        showAvatarInChat = pref[KEY_SHOW_AVATAR] ?: true,
             characterLimitMode = pref[KEY_CHARACTER_LIMIT] ?: "standard",
-            contextWindowSize = pref[KEY_CONTEXT_WINDOW] ?: 12,
+            contextWindowSize = pref[KEY_CONTEXT_WINDOW] ?: 24,
             showInternalReasoningDebug = pref[KEY_SHOW_REASONING] ?: false,
             globalDefaultNsfw = pref[KEY_DEFAULT_NSFW] ?: false,
             textingModeDelayPreset = pref[KEY_TEXTING_DELAY_PRESET] ?: "normal",
@@ -463,7 +529,22 @@ class UserPreferencesRepository(private val context: Context) {
             boykisserPetSpeed = (pref[KEY_BOYKISSER_PET_SPEED] ?: 1.0f).coerceIn(0.5f, 2.5f),
             boykisserMainBehavior = pref[KEY_BOYKISSER_MAIN_BEHAVIOR] ?: "walk",
             boykisserChatBehavior = pref[KEY_BOYKISSER_CHAT_BEHAVIOR] ?: "walk",
-            lastSeenWhatsNewVersion = pref[KEY_LAST_SEEN_WHATS_NEW_VERSION] ?: ""
+            selectedPetsJson = pref[KEY_SELECTED_PETS_JSON] ?: "[\"boykisser\"]",
+            lastSeenWhatsNewVersion = pref[KEY_LAST_SEEN_WHATS_NEW_VERSION] ?: "",
+            controlStyle = pref[KEY_CONTROL_STYLE] ?: "classic",
+            buttonShapePreset = pref[KEY_BUTTON_SHAPE_PRESET] ?: "cookie",
+            buttonShapeWaves = pref[KEY_BUTTON_SHAPE_WAVES] ?: 12,
+            buttonShapeDepthPercent = (pref[KEY_BUTTON_SHAPE_DEPTH] ?: 0.06f).coerceIn(0f, 0.25f),
+            pluginMotionBlurEnabled = pref[KEY_PLUGIN_MOTION_BLUR_ENABLED] ?: false,
+            pluginMotionBlurIntensity = (pref[KEY_PLUGIN_MOTION_BLUR_INTENSITY] ?: 12f).coerceIn(1f, 30f),
+            pluginBubblesEnabled = pref[KEY_PLUGIN_BUBBLES_ENABLED] ?: false,
+            pluginBubblesCount = (pref[KEY_PLUGIN_BUBBLES_COUNT] ?: 15).coerceIn(5, 50),
+            ragEnabled = pref[KEY_RAG_ENABLED] ?: true,
+            ragEmbeddingModel = pref[KEY_RAG_EMBEDDING_MODEL] ?: "",
+            ragTopK = pref[KEY_RAG_TOP_K] ?: 3,
+            customContextLimit = pref[KEY_CUSTOM_CONTEXT_LIMIT] ?: 0,
+            iconPack = pref[KEY_ICON_PACK] ?: "vector",
+            appIconStyle = pref[KEY_APP_ICON_STYLE] ?: "classic"
         )
     }
 
@@ -480,7 +561,8 @@ class UserPreferencesRepository(private val context: Context) {
             pref[KEY_WALLPAPER_ALPHA] = settings.chatWallpaperAlpha
             pref[KEY_FONT_SIZE] = settings.fontSizeSp
             pref[KEY_BUBBLE_STYLE] = settings.bubbleStyle
-            pref[KEY_SHOW_AVATAR] = settings.showAvatarInChat
+        pref[KEY_CHAT_INTERFACE_THEME] = settings.chatInterfaceTheme
+        pref[KEY_SHOW_AVATAR] = settings.showAvatarInChat
             pref[KEY_CHARACTER_LIMIT] = settings.characterLimitMode
             pref[KEY_CONTEXT_WINDOW] = settings.contextWindowSize
             pref[KEY_SHOW_REASONING] = settings.showInternalReasoningDebug
@@ -574,7 +656,22 @@ class UserPreferencesRepository(private val context: Context) {
             pref[KEY_BOYKISSER_PET_SPEED] = settings.boykisserPetSpeed
             pref[KEY_BOYKISSER_MAIN_BEHAVIOR] = settings.boykisserMainBehavior
             pref[KEY_BOYKISSER_CHAT_BEHAVIOR] = settings.boykisserChatBehavior
+            pref[KEY_SELECTED_PETS_JSON] = settings.selectedPetsJson
             pref[KEY_LAST_SEEN_WHATS_NEW_VERSION] = settings.lastSeenWhatsNewVersion
+            pref[KEY_CONTROL_STYLE] = settings.controlStyle
+            pref[KEY_BUTTON_SHAPE_PRESET] = settings.buttonShapePreset
+            pref[KEY_BUTTON_SHAPE_WAVES] = settings.buttonShapeWaves
+            pref[KEY_BUTTON_SHAPE_DEPTH] = settings.buttonShapeDepthPercent
+            pref[KEY_PLUGIN_MOTION_BLUR_ENABLED] = settings.pluginMotionBlurEnabled
+            pref[KEY_PLUGIN_MOTION_BLUR_INTENSITY] = settings.pluginMotionBlurIntensity
+            pref[KEY_PLUGIN_BUBBLES_ENABLED] = settings.pluginBubblesEnabled
+            pref[KEY_PLUGIN_BUBBLES_COUNT] = settings.pluginBubblesCount
+            pref[KEY_RAG_ENABLED] = settings.ragEnabled
+            pref[KEY_RAG_EMBEDDING_MODEL] = settings.ragEmbeddingModel
+            pref[KEY_RAG_TOP_K] = settings.ragTopK
+            pref[KEY_CUSTOM_CONTEXT_LIMIT] = settings.customContextLimit
+            pref[KEY_ICON_PACK] = settings.iconPack
+            pref[KEY_APP_ICON_STYLE] = settings.appIconStyle
             if (settings.defaultTextProviderId != null) {
                 pref[KEY_DEFAULT_TEXT_PROVIDER_ID] = settings.defaultTextProviderId
             } else {

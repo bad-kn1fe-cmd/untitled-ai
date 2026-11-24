@@ -30,7 +30,7 @@ data class WhatsNewFeatureItem(
     val descRu: String,
     val descEn: String,
     val descFemboy: String,
-    val badge: String = "1.0.0"
+    val badge: String = "1.1.0"
 )
 
 object WhatsNewReleaseNotes {
@@ -140,10 +140,10 @@ fun WhatsNewDialog(
         isLoadingRemote = false
     }
 
-    val titleText = if (isFemboy) "🎉 Что нового в 1.0.0 (uwu)" else if (isEn) "🎉 What's New in 1.0.0" else "🎉 Что добавлено в 1.0.0"
-    val subtitleText = if (isFemboy) "Официальный релиз версии 1.0.0 — Свободный ролевой движок «Untitled» 🐾"
-    else if (isEn) "Official release 1.0.0 — Open Roleplay Engine 'Untitled'"
-    else "Официальный релиз версии 1.0.0 — Свободный ролевой движок «Untitled»"
+    val titleText = if (isFemboy) "Что нового" else if (isEn) "What's New" else "Что добавлено"
+    val subtitleText = if (isFemboy) " "
+    else if (isEn) " "
+    else " "
 
     val btnText = if (isFemboy) "Отлично, помурчали! 🐾" else if (isEn) "Awesome, let's go! 🚀" else "Отлично, погнали! 🚀"
 
@@ -327,9 +327,10 @@ fun WhatsNewDialog(
                                     modifier = Modifier.padding(12.dp),
                                     verticalAlignment = Alignment.Top
                                 ) {
-                                    Text(
-                                        text = item.emoji,
-                                        fontSize = 24.sp,
+                                    AdaptiveUiIcon(
+                                        emoji = item.emoji,
+                                        size = 24.dp,
+                                        tint = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.padding(top = 2.dp)
                                     )
 

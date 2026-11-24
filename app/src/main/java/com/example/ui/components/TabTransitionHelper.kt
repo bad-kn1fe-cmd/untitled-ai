@@ -775,13 +775,15 @@ fun TabTransitionInteractivePreview(
                                 .clip(RoundedCornerShape(8.dp))
                                 .clickable { triggerPreviewSwitch(index) }
                         ) {
-                            Text(
+                            AdaptiveIconText(
                                 text = title,
                                 fontSize = 10.sp,
                                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                                color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                                textColor = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
+                                iconSize = 12.dp,
+                                spacing = 4.dp,
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp)
                             )
                         }

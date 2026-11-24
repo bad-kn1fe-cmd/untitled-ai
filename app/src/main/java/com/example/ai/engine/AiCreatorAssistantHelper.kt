@@ -288,17 +288,35 @@ $userRequest
     }
 
     private fun extractJsonObjectString(raw: String): String {
-        val trimmed = raw.trim()
-        val fenceRegex = Regex("```(?:json)?\\s*([\\s\\S]*?)```", RegexOption.IGNORE_CASE)
-        val fenced = fenceRegex.find(trimmed)?.groupValues?.getOrNull(1)?.trim()
-        val candidate = if (!fenced.isNullOrBlank()) fenced else trimmed
+        // 1. Remove all thinking/reasoning blocks that reasoning models (DeepSeek R1, Qwen, Grok, Claude) output
+        var cleaned = raw
+            .replace(Regex("<think>[\\s\\S]*?</think>", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("<thinking>[\\s\\S]*?</thinking>", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("<reasoning>[\\s\\S]*?</reasoning>", RegexOption.IGNORE_CASE), "")
+            .trim()
 
+        // 2. Check for markdown code fences (```json ... ``` or ``` ... ```)
+        val fenceRegex = Regex("```(?:json)?\\s*([\\s\\S]*?)```", RegexOption.IGNORE_CASE)
+        val matches = fenceRegex.findAll(cleaned).map { it.groupValues[1].trim() }.toList()
+
+        // If fences exist, prefer the one that looks like our bot JSON (contains '{' and '}')
+        val candidate = matches.lastOrNull { it.contains("{") && it.contains("}") }
+            ?: matches.lastOrNull()
+            ?: cleaned
+
+        // 3. Find outermost curly braces '{' ... '}'
         val firstBrace = candidate.indexOf('{')
         val lastBrace = candidate.lastIndexOf('}')
-        if (firstBrace != -1 && lastBrace != -1 && lastBrace > firstBrace) {
-            return candidate.substring(firstBrace, lastBrace + 1)
+        var json = if (firstBrace != -1 && lastBrace != -1 && lastBrace > firstBrace) {
+            candidate.substring(firstBrace, lastBrace + 1)
+        } else {
+            candidate
         }
-        return candidate
+
+        // 4. Strip trailing commas before closing braces/brackets (common JSON error from LLMs)
+        json = json.replace(Regex(",\\s*([}\\]])"), "$1")
+
+        return json
     }
 
     private fun optNonBlankString(obj: JSONObject, key: String): String? {
@@ -330,18 +348,29 @@ $userRequest
             val cardsArr = obj.optJSONArray("knowledgeCards")
             if (cardsArr != null) {
                 for (i in 0 until cardsArr.length()) {
-                    val cardObj = cardsArr.optJSONObject(i) ?: continue
-                    val title = cardObj.optString("title", "").trim()
-                    val content = cardObj.optString("content", "").trim()
-                    if (title.isNotBlank() || content.isNotBlank()) {
-                        cardsList.add(title.ifBlank { "Лор ${i + 1}" } to content)
+                    val cardObj = cardsArr.optJSONObject(i)
+                    if (cardObj != null) {
+                        val title = cardObj.optString("title", "").trim()
+                        val content = cardObj.optString("content", "").trim()
+                        if (title.isNotBlank() || content.isNotBlank()) {
+                            cardsList.add(title.ifBlank { "Лор ${i + 1}" } to content)
+                        }
+                    } else {
+                        val text = cardsArr.optString(i, "").trim()
+                        if (text.isNotBlank()) {
+                            cardsList.add("Заметка ${i + 1}" to text)
+                        }
                     }
                 }
             }
 
             val parsedAge = if (obj.has("age") && !obj.isNull("age")) {
                 val a = obj.optInt("age", -1)
-                if (a > 0) a else null
+                if (a > 0) a
+                else {
+                    val s = obj.optString("age", "")
+                    Regex("\\d+").find(s)?.value?.toIntOrNull()
+                }
             } else null
 
             Result.success(
@@ -375,12 +404,22 @@ $userRequest
         return try {
             val jsonStr = extractJsonObjectString(rawResponse)
             val obj = JSONObject(jsonStr)
+
+            val parsedAge = if (obj.has("age") && !obj.isNull("age")) {
+                val a = obj.optInt("age", -1)
+                if (a > 0) a
+                else {
+                    val s = obj.optString("age", "")
+                    Regex("\\d+").find(s)?.value?.toIntOrNull() ?: 20
+                }
+            } else 20
+
             Result.success(
                 GeneratedPersonaDraft(
                     assistantMessage = optNonBlankString(obj, "assistantMessage")
                         ?: "Готово! Персона создана и заполнена.",
                     name = optNonBlankString(obj, "name") ?: "Игрок",
-                    age = obj.optInt("age", 20).coerceIn(1, 9999),
+                    age = parsedAge.coerceIn(1, 9999),
                     gender = optNonBlankString(obj, "gender") ?: "",
                     shortDescription = optNonBlankString(obj, "shortDescription") ?: "",
                     personality = optNonBlankString(obj, "personality") ?: "",

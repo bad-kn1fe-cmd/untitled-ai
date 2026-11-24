@@ -22,25 +22,31 @@ object MemoryEngine {
         providerProfile: AiProviderProfileEntity,
         messageDao: MessageDao,
         summaryDao: SummaryDao,
-        relationshipDao: RelationshipDao
+        relationshipDao: RelationshipDao,
+        isRegeneration: Boolean = false
     ): Boolean = withContext(Dispatchers.IO) {
-        val totalCount = messageDao.getMessageCountForChat(chat.id)
-        if (totalCount < chat.summaryFrequency) return@withContext false
+        if (isRegeneration) return@withContext false
 
-        // Check if generated strictly at boundary (e.g., at exactly message 10, 20, 30...)
-        if (totalCount % chat.summaryFrequency != 0) {
+        val allMessages = messageDao.getMessagesListForChat(chat.id)
+        val userMsgCount = allMessages.count { it.sender == "user" }
+        val freq = chat.summaryFrequency.coerceAtLeast(3)
+        val latestSummary = summaryDao.getLatestSummary(chat.id)
+
+        // Для самого первого саммари делаем триггер раньше (minOf(4, freq)), чтобы устранить амнезию на старте (~20% контекста)
+        val shouldTrigger = if (latestSummary == null) {
+            userMsgCount >= minOf(4, freq)
+        } else {
+            userMsgCount >= freq && userMsgCount % freq == 0
+        }
+        if (!shouldTrigger) return@withContext false
+
+        val batchRange = "user_turn_$userMsgCount"
+        if (latestSummary != null && latestSummary.messageRange == batchRange) {
             return@withContext false
         }
 
         try {
-            val latestSummary = summaryDao.getLatestSummary(chat.id)
-            val expectedRange = "Сообщения #${totalCount - chat.summaryFrequency} - #$totalCount"
-            if (latestSummary != null && latestSummary.messageRange == expectedRange) {
-                // Already generated for this exact batch, skip to prevent duplicates
-                return@withContext false
-            }
-
-            val recentMessages = messageDao.getRecentMessages(chat.id, chat.summaryFrequency + 2).reversed()
+            val recentMessages = allMessages.takeLast(freq * 2)
             if (recentMessages.isEmpty()) return@withContext false
 
             val msgTextBuilder = StringBuilder()
@@ -60,8 +66,13 @@ object MemoryEngine {
                 initialPercent = if (character.initialRelationshipPercent != -1) character.initialRelationshipPercent else -999
             )
 
+            val initialPlot = character.greetingMessage.ifBlank {
+                allMessages.firstOrNull { it.sender != "user" }?.content ?: ""
+            }
+
             val prompt = RoleplayPromptBuilder.buildSummaryPrompt(
                 characterName = character.name,
+                initialPlot = initialPlot,
                 previousSummary = latestSummary?.summaryText,
                 messagesText = msgTextBuilder.toString(),
                 currentBoard = currentBoard
@@ -88,7 +99,7 @@ object MemoryEngine {
             if (summaryStr.isNotBlank()) {
                 val summaryEntity = SummaryEntity(
                     chatId = chat.id,
-                    messageRange = "Сообщения #${totalCount - chat.summaryFrequency} - #$totalCount",
+                    messageRange = batchRange,
                     summaryText = summaryStr,
                     timestamp = System.currentTimeMillis()
                 )

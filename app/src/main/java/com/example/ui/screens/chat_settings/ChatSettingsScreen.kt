@@ -34,6 +34,7 @@ import com.example.data.local.entity.CharacterEntity
 import com.example.data.local.entity.ChatEntity
 import com.example.ui.components.AppAsyncImage
 import com.example.ui.components.AvatarImage
+import com.example.ui.components.AdaptiveIconText
 import org.json.JSONArray
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -278,11 +279,13 @@ fun ChatSettingsScreen(
                                     color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f),
                                     border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
                                 ) {
-                                    Text(
+                                    AdaptiveIconText(
                                         text = if (isEn) "✍️ Author: $authorName" else "✍️ Автор: $authorName",
-                                        style = MaterialTheme.typography.labelSmall,
+                                        textStyle = MaterialTheme.typography.labelSmall,
                                         fontWeight = FontWeight.SemiBold,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        textColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        iconSize = 12.dp,
+                                        spacing = 4.dp,
                                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                                     )
                                 }
@@ -290,10 +293,12 @@ fun ChatSettingsScreen(
                                     shape = RoundedCornerShape(50),
                                     color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.85f)
                                 ) {
-                                    Text(
+                                    AdaptiveIconText(
                                         text = if (isEn) "🎂 Age: ${character.age}" else "🎂 Возраст: ${character.age}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                        textStyle = MaterialTheme.typography.labelSmall,
+                                        textColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                        iconSize = 12.dp,
+                                        spacing = 4.dp,
                                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                                     )
                                 }
@@ -328,11 +333,13 @@ fun ChatSettingsScreen(
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.SemiBold
                                 )
-                                Text(
+                                AdaptiveIconText(
                                     text = "📊 ${character.getEffectiveInitialRelTitle()} (${character.getEffectiveInitialRelPercent()}%)",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Color.White.copy(alpha = 0.92f),
-                                    fontSize = 10.sp
+                                    textStyle = MaterialTheme.typography.labelSmall,
+                                    textColor = Color.White.copy(alpha = 0.92f),
+                                    fontSize = 10.sp,
+                                    iconSize = 12.dp,
+                                    spacing = 4.dp
                                 )
                             }
                         }
@@ -407,11 +414,13 @@ fun ChatSettingsScreen(
 
                                         if (character.appearance.isNotBlank()) {
                                             Column {
-                                                Text(
+                                                AdaptiveIconText(
                                                     text = "✨ Внешность:",
-                                                    style = MaterialTheme.typography.labelMedium,
+                                                    textStyle = MaterialTheme.typography.labelMedium,
                                                     fontWeight = FontWeight.Bold,
-                                                    color = MaterialTheme.colorScheme.primary
+                                                    textColor = MaterialTheme.colorScheme.primary,
+                                                    iconSize = 14.dp,
+                                                    spacing = 4.dp
                                                 )
                                                 Spacer(modifier = Modifier.height(2.dp))
                                                 Text(
@@ -424,11 +433,13 @@ fun ChatSettingsScreen(
 
                                         if (characterAppearancePhotos.isNotEmpty()) {
                                             Column {
-                                                Text(
+                                                AdaptiveIconText(
                                                     text = "📸 Фото внешности:",
-                                                    style = MaterialTheme.typography.labelMedium,
+                                                    textStyle = MaterialTheme.typography.labelMedium,
                                                     fontWeight = FontWeight.Bold,
-                                                    color = MaterialTheme.colorScheme.primary
+                                                    textColor = MaterialTheme.colorScheme.primary,
+                                                    iconSize = 14.dp,
+                                                    spacing = 4.dp
                                                 )
                                                 Spacer(modifier = Modifier.height(6.dp))
                                                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -466,11 +477,13 @@ fun ChatSettingsScreen(
 
                                         if (character.personality.isNotBlank()) {
                                             Column {
-                                                Text(
+                                                AdaptiveIconText(
                                                     text = "🧠 Характер:",
-                                                    style = MaterialTheme.typography.labelMedium,
+                                                    textStyle = MaterialTheme.typography.labelMedium,
                                                     fontWeight = FontWeight.Bold,
-                                                    color = MaterialTheme.colorScheme.primary
+                                                    textColor = MaterialTheme.colorScheme.primary,
+                                                    iconSize = 14.dp,
+                                                    spacing = 4.dp
                                                 )
                                                 Spacer(modifier = Modifier.height(2.dp))
                                                 Text(
@@ -483,11 +496,13 @@ fun ChatSettingsScreen(
 
                                         if (character.voiceStyle.isNotBlank()) {
                                             Column {
-                                                Text(
+                                                AdaptiveIconText(
                                                     text = "🗣️ Голос и манера общения:",
-                                                    style = MaterialTheme.typography.labelMedium,
+                                                    textStyle = MaterialTheme.typography.labelMedium,
                                                     fontWeight = FontWeight.Bold,
-                                                    color = MaterialTheme.colorScheme.primary
+                                                    textColor = MaterialTheme.colorScheme.primary,
+                                                    iconSize = 14.dp,
+                                                    spacing = 4.dp
                                                 )
                                                 Spacer(modifier = Modifier.height(2.dp))
                                                 Text(
@@ -500,11 +515,13 @@ fun ChatSettingsScreen(
 
                                         if (character.habits.isNotBlank()) {
                                             Column {
-                                                Text(
+                                                AdaptiveIconText(
                                                     text = "🎭 Привычки и особенности:",
-                                                    style = MaterialTheme.typography.labelMedium,
+                                                    textStyle = MaterialTheme.typography.labelMedium,
                                                     fontWeight = FontWeight.Bold,
-                                                    color = MaterialTheme.colorScheme.primary
+                                                    textColor = MaterialTheme.colorScheme.primary,
+                                                    iconSize = 14.dp,
+                                                    spacing = 4.dp
                                                 )
                                                 Spacer(modifier = Modifier.height(2.dp))
                                                 Text(
@@ -517,11 +534,13 @@ fun ChatSettingsScreen(
 
                                         if (character.likes.isNotBlank()) {
                                             Column {
-                                                Text(
+                                                AdaptiveIconText(
                                                     text = "💚 Любит:",
-                                                    style = MaterialTheme.typography.labelMedium,
+                                                    textStyle = MaterialTheme.typography.labelMedium,
                                                     fontWeight = FontWeight.Bold,
-                                                    color = MaterialTheme.colorScheme.primary
+                                                    textColor = MaterialTheme.colorScheme.primary,
+                                                    iconSize = 14.dp,
+                                                    spacing = 4.dp
                                                 )
                                                 Spacer(modifier = Modifier.height(2.dp))
                                                 Text(
@@ -534,11 +553,13 @@ fun ChatSettingsScreen(
 
                                         if (character.dislikes.isNotBlank()) {
                                             Column {
-                                                Text(
+                                                AdaptiveIconText(
                                                     text = "💔 Не любит:",
-                                                    style = MaterialTheme.typography.labelMedium,
+                                                    textStyle = MaterialTheme.typography.labelMedium,
                                                     fontWeight = FontWeight.Bold,
-                                                    color = MaterialTheme.colorScheme.primary
+                                                    textColor = MaterialTheme.colorScheme.primary,
+                                                    iconSize = 14.dp,
+                                                    spacing = 4.dp
                                                 )
                                                 Spacer(modifier = Modifier.height(2.dp))
                                                 Text(
@@ -551,11 +572,13 @@ fun ChatSettingsScreen(
 
                                         if (character.greetingMessage.isNotBlank()) {
                                             Column {
-                                                Text(
+                                                AdaptiveIconText(
                                                     text = "👋 Приветственное сообщение:",
-                                                    style = MaterialTheme.typography.labelMedium,
+                                                    textStyle = MaterialTheme.typography.labelMedium,
                                                     fontWeight = FontWeight.Bold,
-                                                    color = MaterialTheme.colorScheme.primary
+                                                    textColor = MaterialTheme.colorScheme.primary,
+                                                    iconSize = 14.dp,
+                                                    spacing = 4.dp
                                                 )
                                                 Spacer(modifier = Modifier.height(2.dp))
                                                 Text(
@@ -586,11 +609,13 @@ fun ChatSettingsScreen(
                                                     horizontalArrangement = Arrangement.SpaceBetween,
                                                     verticalAlignment = Alignment.CenterVertically
                                                 ) {
-                                                    Text(
+                                                    AdaptiveIconText(
                                                         text = "📚 Карточки знаний (${parsedLoreCards.size}):",
-                                                        style = MaterialTheme.typography.labelMedium,
+                                                        textStyle = MaterialTheme.typography.labelMedium,
                                                         fontWeight = FontWeight.Bold,
-                                                        color = MaterialTheme.colorScheme.primary
+                                                        textColor = MaterialTheme.colorScheme.primary,
+                                                        iconSize = 14.dp,
+                                                        spacing = 4.dp
                                                     )
                                                     TextButton(
                                                         onClick = {
@@ -796,7 +821,7 @@ fun ChatSettingsScreen(
                 ) {
                     Icon(Icons.Default.DeleteForever, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(if (isFemboy) "🗑 Удалить этот чатик и историю" else if (isEn) "🗑 Delete this dialogue and history" else "Удалить этот диалог и историю")
+                    Text(if (isFemboy) "Удалить этот чатик и историю" else if (isEn) "Delete this dialogue and history" else "Удалить этот диалог и историю")
                 }
             }
         }

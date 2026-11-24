@@ -21,5 +21,7 @@ build/
 *.iml
 .aistudio/
 **/.aistudio/
+app/release/
+release/
 .DS_Store
 Thumbs.db

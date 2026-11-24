@@ -53,7 +53,8 @@ object AiProviderEngine {
         recentMessages: List<MessageEntity>,
         openRouterFallbackModels: String = "",
         geminiSafetyThreshold: String = "BLOCK_NONE",
-        onTokenStream: ((String) -> Unit)? = null
+        onTokenStream: ((String) -> Unit)? = null,
+        overrideMaxTokens: Int? = null
     ): Result<String> = withContext(Dispatchers.IO) {
         try {
             if (profile.apiKey.isBlank() && profile.providerType != "CUSTOM") {
@@ -63,12 +64,12 @@ object AiProviderEngine {
             }
 
             when (profile.providerType.uppercase()) {
-                "OPENROUTER" -> callOpenRouterOrOpenAi(profile, systemPrompt, recentMessages, isRouters = true, openRouterFallbackModels = openRouterFallbackModels, onTokenStream = onTokenStream)
-                "ANTHROPIC" -> callAnthropic(profile, systemPrompt, recentMessages, onTokenStream = onTokenStream)
-                "GEMINI" -> callGemini(profile, systemPrompt, recentMessages, geminiSafetyThreshold = geminiSafetyThreshold, onTokenStream = onTokenStream)
+                "OPENROUTER" -> callOpenRouterOrOpenAi(profile, systemPrompt, recentMessages, isRouters = true, openRouterFallbackModels = openRouterFallbackModels, onTokenStream = onTokenStream, overrideMaxTokens = overrideMaxTokens)
+                "ANTHROPIC" -> callAnthropic(profile, systemPrompt, recentMessages, onTokenStream = onTokenStream, overrideMaxTokens = overrideMaxTokens)
+                "GEMINI" -> callGemini(profile, systemPrompt, recentMessages, geminiSafetyThreshold = geminiSafetyThreshold, onTokenStream = onTokenStream, overrideMaxTokens = overrideMaxTokens)
                 "CEREBRAS", "GROK", "XAI", "GROQ", "SAMBANOVA", "DEEPSEEK", "TOGETHER", "MISTRAL", "FIREWORKS", "PERPLEXITY", "OPENAI", "CUSTOM" ->
-                    callOpenRouterOrOpenAi(profile, systemPrompt, recentMessages, isRouters = false, openRouterFallbackModels = openRouterFallbackModels, onTokenStream = onTokenStream)
-                else -> callOpenRouterOrOpenAi(profile, systemPrompt, recentMessages, isRouters = false, openRouterFallbackModels = openRouterFallbackModels, onTokenStream = onTokenStream)
+                    callOpenRouterOrOpenAi(profile, systemPrompt, recentMessages, isRouters = false, openRouterFallbackModels = openRouterFallbackModels, onTokenStream = onTokenStream, overrideMaxTokens = overrideMaxTokens)
+                else -> callOpenRouterOrOpenAi(profile, systemPrompt, recentMessages, isRouters = false, openRouterFallbackModels = openRouterFallbackModels, onTokenStream = onTokenStream, overrideMaxTokens = overrideMaxTokens)
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -89,7 +90,8 @@ object AiProviderEngine {
         messages: List<MessageEntity>,
         isRouters: Boolean,
         openRouterFallbackModels: String = "",
-        onTokenStream: ((String) -> Unit)? = null
+        onTokenStream: ((String) -> Unit)? = null,
+        overrideMaxTokens: Int? = null
     ): Result<String> {
         val isCerebras = profile.providerType.equals("CEREBRAS", ignoreCase = true)
         val isGrokOrXai = profile.providerType.equals("GROK", ignoreCase = true) ||
@@ -241,7 +243,7 @@ object AiProviderEngine {
                     bodyJson.put("messages", messagesJson)
                     bodyJson.put("temperature", profile.temperature.toDouble())
                     bodyJson.put("top_p", profile.topP.toDouble())
-                    bodyJson.put("max_tokens", profile.maxTokens)
+                    bodyJson.put("max_tokens", overrideMaxTokens ?: profile.maxTokens)
                     if (onTokenStream != null) {
                         bodyJson.put("stream", true)
                     }
@@ -373,11 +375,13 @@ object AiProviderEngine {
 
                     val responseBody = response.body?.string() ?: ""
                     val parsed = JSONObject(responseBody)
-                    val choices = parsed.getJSONArray("choices")
-                    if (choices.length() > 0) {
+                    val choices = parsed.optJSONArray("choices")
+                    if (choices != null && choices.length() > 0) {
                         val firstChoice = choices.getJSONObject(0)
-                        val messageObj = firstChoice.getJSONObject("message")
-                        val content = messageObj.optString("content", "")
+                        val messageObj = firstChoice.optJSONObject("message")
+                        val content = messageObj?.optString("content", "")?.takeIf { it.isNotBlank() }
+                            ?: messageObj?.optString("reasoning_content", "")?.takeIf { it.isNotBlank() }
+                            ?: firstChoice.optString("text", "")
                         if (content.isNotBlank()) {
                             return Result.success(stripThinkingIfDisabled(content, profile))
                         }
@@ -396,7 +400,8 @@ object AiProviderEngine {
         profile: AiProviderProfileEntity,
         systemPrompt: String,
         messages: List<MessageEntity>,
-        onTokenStream: ((String) -> Unit)? = null
+        onTokenStream: ((String) -> Unit)? = null,
+        overrideMaxTokens: Int? = null
     ): Result<String> {
         val baseUrl = profile.baseUrl.ifBlank { "https://api.anthropic.com/v1" }.trimEnd('/')
         val url = if (baseUrl.endsWith("/messages")) baseUrl else "$baseUrl/messages"
@@ -429,7 +434,7 @@ object AiProviderEngine {
         bodyJson.put("system", systemPrompt)
         bodyJson.put("messages", messagesJson)
         bodyJson.put("temperature", profile.temperature.toDouble())
-        bodyJson.put("max_tokens", profile.maxTokens)
+        bodyJson.put("max_tokens", overrideMaxTokens ?: profile.maxTokens)
         if (onTokenStream != null) {
             bodyJson.put("stream", true)
         }
@@ -492,8 +497,21 @@ object AiProviderEngine {
                 val parsed = JSONObject(responseBody)
                 val contentArray = parsed.optJSONArray("content")
                 if (contentArray != null && contentArray.length() > 0) {
-                    val first = contentArray.getJSONObject(0)
-                    return Result.success(first.optString("text", ""))
+                    val textBuilder = StringBuilder()
+                    for (i in 0 until contentArray.length()) {
+                        val block = contentArray.getJSONObject(i)
+                        if (block.optString("type") == "text") {
+                            textBuilder.append(block.optString("text", ""))
+                        }
+                    }
+                    val extracted = textBuilder.toString()
+                    if (extracted.isNotBlank()) {
+                        return Result.success(extracted)
+                    }
+                    val fallback = contentArray.getJSONObject(0).optString("text", "")
+                    if (fallback.isNotBlank()) {
+                        return Result.success(fallback)
+                    }
                 }
                 return Result.failure(IOException("Пустой ответ от Claude"))
             } catch (e: Exception) {
@@ -510,7 +528,8 @@ object AiProviderEngine {
         systemPrompt: String,
         messages: List<MessageEntity>,
         geminiSafetyThreshold: String = "BLOCK_NONE",
-        onTokenStream: ((String) -> Unit)? = null
+        onTokenStream: ((String) -> Unit)? = null,
+        overrideMaxTokens: Int? = null
     ): Result<String> {
         val model = profile.model.ifBlank { "gemini-3.5-flash-lite" }
         val baseUrl = profile.baseUrl.ifBlank { "https://generativelanguage.googleapis.com" }.trimEnd('/')
@@ -655,7 +674,7 @@ object AiProviderEngine {
         val genConfig = JSONObject()
         genConfig.put("temperature", profile.temperature.toDouble())
         genConfig.put("topP", profile.topP.toDouble())
-        genConfig.put("maxOutputTokens", profile.maxTokens)
+        genConfig.put("maxOutputTokens", overrideMaxTokens ?: profile.maxTokens)
         bodyJson.put("generationConfig", genConfig)
 
         // Gemini Safety Settings threshold configuration
@@ -710,23 +729,36 @@ object AiProviderEngine {
 
                 if (!response.isSuccessful) {
                     val responseBody = response.body?.string() ?: ""
-                    val errorMsg = "Ошибка Gemini [${response.code}]: $responseBody"
+                    val parsedMsg = try {
+                        val errObj = JSONObject(responseBody).optJSONObject("error")
+                        errObj?.optString("message")?.takeIf { it.isNotBlank() }
+                    } catch (_: Exception) { null }
+                    val cleanError = if (!parsedMsg.isNullOrBlank()) {
+                        "Ошибка Gemini [${response.code}]: $parsedMsg"
+                    } else {
+                        "Ошибка Gemini [${response.code}]: $responseBody"
+                    }
+                    val httpException = IOException(cleanError)
+                    lastError = httpException
+
                     GeminiDebugLogger.recordFailure(
                         requestId = requestId,
-                        errorMsg = errorMsg,
+                        errorMsg = cleanError,
                         isTimeout = false,
                         emptyReason = "HTTP status code ${response.code} is not successful",
-                        exception = IOException(errorMsg)
+                        exception = httpException
                     )
                     if (response.code == 429 || response.code in 500..599) {
                         delay(1200L * attempt)
                         continue
                     }
-                    return Result.failure(IOException(errorMsg))
+                    return Result.failure(httpException)
                 }
 
                 if (onTokenStream != null) {
                     val streamedText = StringBuilder()
+                    val thoughtText = StringBuilder()
+                    var thoughtChunkCount = 0
                     var chunkCount = 0
                     var lastFinishReason: String? = null
                     var latestUsageMetadata: String? = null
@@ -745,6 +777,11 @@ object AiProviderEngine {
                             if (dataContent.startsWith("{")) {
                                 try {
                                     val parsed = JSONObject(dataContent)
+                                    val promptFeedback = parsed.optJSONObject("promptFeedback")
+                                    val blockReason = promptFeedback?.optString("blockReason")
+                                    if (!blockReason.isNullOrBlank()) {
+                                        lastFinishReason = blockReason
+                                    }
                                     val usage = parsed.optJSONObject("usageMetadata")
                                     if (usage != null) {
                                         latestUsageMetadata = usage.toString()
@@ -767,8 +804,13 @@ object AiProviderEngine {
                                             val partPieceBuilder = StringBuilder()
                                             for (i in 0 until parts.length()) {
                                                 val pObj = parts.getJSONObject(i)
-                                                if (profile.thinkingMode == "disabled" && pObj.optBoolean("thought", false)) continue
+                                                val isThought = pObj.optBoolean("thought", false)
                                                 val piece = pObj.optString("text", "")
+                                                if (isThought) {
+                                                    thoughtChunkCount++
+                                                    thoughtText.append(piece)
+                                                    if (profile.thinkingMode == "disabled") continue
+                                                }
                                                 if (piece.isNotEmpty()) {
                                                     partPieceBuilder.append(piece)
                                                 }
@@ -805,75 +847,134 @@ object AiProviderEngine {
 
                     GeminiDebugLogger.recordStreamEnd(requestId)
 
-                    if (streamedText.isNotEmpty()) {
-                        val finalOut = stripThinkingIfDisabled(streamedText.toString(), profile)
-                        GeminiDebugLogger.recordSuccess(requestId, finalOut)
-                        return Result.success(finalOut)
+                    var finalText = streamedText.toString()
+                    if (finalText.isNotEmpty()) {
+                        finalText = stripThinkingIfDisabled(finalText, profile)
+                    }
+
+                    if (finalText.isEmpty() && thoughtText.isNotEmpty() && profile.thinkingMode != "disabled") {
+                        finalText = thoughtText.toString()
+                    }
+
+                    if (finalText.isNotEmpty()) {
+                        GeminiDebugLogger.recordSuccess(requestId, finalText)
+                        return Result.success(finalText)
                     } else {
-                        val isBlocked = lastFinishReason == "PROHIBITED_CONTENT" || lastFinishReason == "SAFETY"
-                        val emptyReason = if (isBlocked) {
-                            "Ответ заблокирован фильтром безопасности Gemini ($lastFinishReason). Перейдите в Настройки -> ИИ & Модели и установите порог безопасности модели в значение 'Отключено (BLOCK_NONE)'."
-                        } else {
-                            "Поток SSE завершился (получено chunks: $chunkCount), но извлеченный текст пуст. finishReason='${lastFinishReason ?: "отсутствует"}', usageMetadata='${latestUsageMetadata ?: "отсутствует"}'"
+                        val isBlocked = lastFinishReason == "PROHIBITED_CONTENT" ||
+                                lastFinishReason == "SAFETY" ||
+                                lastFinishReason == "BLOCKLIST"
+                        val emptyReason = when {
+                            isBlocked -> {
+                                "Ответ заблокирован фильтром безопасности Gemini ($lastFinishReason). Перейдите в Настройки -> ИИ & Модели и установите порог безопасности модели в значение 'Отключено (BLOCK_NONE)'."
+                            }
+                            thoughtChunkCount > 0 && lastFinishReason == "MAX_TOKENS" -> {
+                                "Модель потратила все токены (лимит maxOutputTokens = ${profile.maxTokens}) на рассуждения (thought) и не успела сформировать ответ. Увеличьте лимит токенов в профиле."
+                            }
+                            thoughtChunkCount > 0 && profile.thinkingMode == "disabled" -> {
+                                "Модель вернула только рассуждения (thinking), но они отключены в профиле. Увеличьте лимит токенов или включите Thinking Mode."
+                            }
+                            else -> {
+                                "Поток SSE завершился (получено chunks: $chunkCount), но извлеченный текст пуст. finishReason='${lastFinishReason ?: "отсутствует"}', usageMetadata='${latestUsageMetadata ?: "отсутствует"}'"
+                            }
                         }
+
+                        val emptyException = IOException(emptyReason)
                         GeminiDebugLogger.recordFailure(
                             requestId = requestId,
                             errorMsg = if (isBlocked) "Ответ заблокирован фильтром безопасности ($lastFinishReason)" else "Ответ Gemini не пришел",
                             isTimeout = false,
                             emptyReason = emptyReason,
-                            exception = IOException(emptyReason)
+                            exception = emptyException
                         )
+
+                        if (isBlocked) {
+                            return Result.failure(emptyException)
+                        }
+
+                        lastError = emptyException
+                        if (attempt < 3) {
+                            delay(1000L * attempt)
+                            continue
+                        } else {
+                            return Result.failure(emptyException)
+                        }
                     }
                 } else {
                     val responseBody = response.body?.string() ?: ""
                     val parsed = JSONObject(responseBody)
+                    val promptFeedback = parsed.optJSONObject("promptFeedback")
+                    val blockReason = promptFeedback?.optString("blockReason")
                     val usage = parsed.optJSONObject("usageMetadata")
                     val candidates = parsed.optJSONArray("candidates")
                     if (candidates != null && candidates.length() > 0) {
                         val first = candidates.getJSONObject(0)
-                        val finishReason = first.optString("finishReason", "")
+                        val finishReason = first.optString("finishReason", "").ifBlank { blockReason ?: "" }
                         val content = first.optJSONObject("content")
                         val parts = content?.optJSONArray("parts")
                         val textBuilder = StringBuilder()
+                        val thoughtBuilder = StringBuilder()
+                        var thoughtCount = 0
                         if (parts != null) {
                             for (i in 0 until parts.length()) {
                                 val pObj = parts.getJSONObject(i)
-                                if (profile.thinkingMode == "disabled" && pObj.optBoolean("thought", false)) continue
-                                textBuilder.append(pObj.optString("text", ""))
+                                val isThought = pObj.optBoolean("thought", false)
+                                val piece = pObj.optString("text", "")
+                                if (isThought) {
+                                    thoughtCount++
+                                    thoughtBuilder.append(piece)
+                                    if (profile.thinkingMode == "disabled") continue
+                                }
+                                textBuilder.append(piece)
                             }
                         }
-                        val resultText = stripThinkingIfDisabled(textBuilder.toString(), profile)
+                        var resultText = stripThinkingIfDisabled(textBuilder.toString(), profile)
+                        if (resultText.isEmpty() && thoughtBuilder.isNotEmpty() && profile.thinkingMode != "disabled") {
+                            resultText = thoughtBuilder.toString()
+                        }
                         if (resultText.isNotEmpty()) {
                             GeminiDebugLogger.recordSuccess(requestId, resultText)
                             return Result.success(resultText)
                         } else {
-                            val isBlocked = finishReason == "PROHIBITED_CONTENT" || finishReason == "SAFETY"
-                            val emptyReason = if (isBlocked) {
-                                "Ответ заблокирован фильтром безопасности Gemini ($finishReason). Перейдите в Настройки -> ИИ & Модели и установите порог безопасности модели в значение 'Отключено (BLOCK_NONE)'."
-                            } else {
-                                "Ответ получен (HTTP 200), но текст в частях parts пуст. finishReason='$finishReason'"
+                            val isBlocked = finishReason == "PROHIBITED_CONTENT" ||
+                                    finishReason == "SAFETY" ||
+                                    finishReason == "BLOCKLIST" ||
+                                    !blockReason.isNullOrBlank()
+                            val effectiveReason = if (!blockReason.isNullOrBlank()) blockReason else finishReason
+                            val emptyReason = when {
+                                isBlocked -> "Ответ заблокирован фильтром безопасности Gemini ($effectiveReason). Перейдите в Настройки -> ИИ & Модели и установите порог безопасности модели в значение 'Отключено (BLOCK_NONE)'."
+                                thoughtCount > 0 && finishReason == "MAX_TOKENS" -> "Модель потратила все токены (лимит maxOutputTokens = ${profile.maxTokens}) на рассуждения (thought) и не успела сформировать ответ. Увеличьте лимит токенов в профиле."
+                                thoughtCount > 0 && profile.thinkingMode == "disabled" -> "Модель вернула только рассуждения (thinking), но они отключены в профиле. Увеличьте лимит токенов или включите Thinking Mode."
+                                else -> "Ответ получен (HTTP 200), но текст в частях parts пуст. finishReason='$finishReason'"
                             }
-                            val errorMsg = if (isBlocked) "Ответ заблокирован фильтром безопасности ($finishReason)" else "Пустой ответ от Gemini"
+                            val errorMsg = if (isBlocked) "Ответ заблокирован фильтром безопасности ($effectiveReason)" else "Пустой ответ от Gemini"
+                            val emptyException = IOException(emptyReason)
                             GeminiDebugLogger.recordFailure(
                                 requestId = requestId,
                                 errorMsg = errorMsg,
                                 isTimeout = false,
                                 emptyReason = emptyReason,
-                                exception = IOException(emptyReason)
+                                exception = emptyException
                             )
-                            return Result.failure(IOException(emptyReason))
+                            return Result.failure(emptyException)
                         }
                     } else {
-                        val emptyReason = "Массив candidates пуст или отсутствует в ответе Gemini"
+                        val isBlocked = !blockReason.isNullOrBlank()
+                        val emptyReason = if (isBlocked) {
+                            "Ответ заблокирован фильтром безопасности Gemini ($blockReason). Перейдите в Настройки -> ИИ & Модели и установите порог безопасности модели в значение 'Отключено (BLOCK_NONE)'."
+                        } else {
+                            "Массив candidates пуст или отсутствует в ответе Gemini"
+                        }
+                        val errorMsg = if (isBlocked) "Ответ заблокирован фильтром безопасности ($blockReason)" else "Пустой ответ от Gemini"
+                        val emptyException = IOException(emptyReason)
                         GeminiDebugLogger.recordFailure(
                             requestId = requestId,
-                            errorMsg = "Пустой ответ от Gemini",
+                            errorMsg = errorMsg,
                             isTimeout = false,
                             emptyReason = emptyReason,
-                            exception = IOException(emptyReason)
+                            exception = emptyException
                         )
+                        return Result.failure(emptyException)
                     }
-                    return Result.failure(IOException("Пустой ответ от Gemini"))
                 }
             } catch (e: Exception) {
                 lastError = e
