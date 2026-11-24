@@ -17,10 +17,10 @@ data class RemoteEventInfo(
 object RemoteEventManager {
 
     val PRIMARY_EVENT_URLS = listOf(
-        "https://raw.githubusercontent.com/yoayammmDEV/box-of-untitledAI/main/info.json",
-        "https://github.com/yoayammmDEV/box-of-untitledAI/raw/main/info.json",
-        "https://github.com/yoayammmDEV/box-of-untitledAI/blob/main/info.json?raw=true",
-        "https://cdn.jsdelivr.net/gh/yoayammmDEV/box-of-untitledAI@main/info.json"
+        "https://raw.githubusercontent.com/bad-kn1fe-cmd/box-of-untitledAI/main/info.json",
+        "https://github.com/bad-kn1fe-cmd/box-of-untitledAI/raw/main/info.json",
+        "https://cdn.jsdelivr.net/gh/bad-kn1fe-cmd/box-of-untitledAI@main/info.json",
+        "https://raw.githubusercontent.com/yoayammmDEV/box-of-untitledAI/main/info.json"
     )
 
     /**
